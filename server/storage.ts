@@ -6,6 +6,7 @@ export interface IStorage {
   // User operations
   getUser(id: number): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  incrementMessageCount(userId: number): Promise<void>;
   
   // Chat operations
   getConversation(id: number): Promise<Conversation | undefined>;
@@ -25,6 +26,15 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async incrementMessageCount(userId: number): Promise<void> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (user) {
+      await db.update(users)
+        .set({ messageCount: user.messageCount + 1 })
+        .where(eq(users.id, userId));
+    }
   }
 
   async getConversation(id: number): Promise<Conversation | undefined> {

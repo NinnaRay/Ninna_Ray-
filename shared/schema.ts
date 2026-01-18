@@ -7,6 +7,7 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   isPremium: boolean("is_premium").default(false),
+  messageCount: integer("message_count").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
