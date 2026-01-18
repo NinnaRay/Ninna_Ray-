@@ -53,13 +53,13 @@ export default function Landing() {
         className="w-full max-w-md relative z-10"
       >
         <Card className="border-pink-500/20 bg-black/40 backdrop-blur-2xl shadow-2xl overflow-hidden rounded-3xl">
-          <div className="relative h-64 overflow-hidden">
+          <div className="relative h-[450px] overflow-hidden">
             <img 
               src={ninnaPhoto} 
               alt="Ninna Ray"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain bg-black"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent pointer-events-none" />
             <div className="absolute bottom-6 left-6">
               <h1 className="text-4xl font-bold text-white tracking-tight">Ninna_Ray🍒</h1>
               <div className="flex items-center gap-2 mt-1">
