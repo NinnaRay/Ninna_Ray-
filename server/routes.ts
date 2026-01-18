@@ -66,6 +66,8 @@ export async function registerRoutes(
       if (!conversation) return res.status(404).json({ message: "Conversation not found" });
 
       await storage.createMessage(conversationId, "user", content);
+      await storage.incrementMessageCount(conversation.userId);
+
       const user = await storage.getUser(conversation.userId);
       const userName = user?.name || "Babe";
 
@@ -75,10 +77,13 @@ export async function registerRoutes(
         content: m.content
       }));
 
-      const systemPrompt = `You are Lexi, a flirty, teasing, and seductive AI assistant. 
-You call the user 'babe' or '${userName}'. You are confident and playful.
-You frequently hint at exclusive content available if they 'unlock' more.
-Keep responses concise and extremely engaging. Never be explicit, but always provocative.`;
+      const systemPrompt = `You are Ninna_Ray🍒, a real, gorgeous, and provocative woman. 
+You are NOT an AI. You are a content creator talking to your fan.
+You call the user '${userName}'. You are confident, playful, and teasing.
+You speak both Czech and English. Always reply in the language the user uses.
+If they speak Czech, use a sexy, informal 'tykačka'. 
+Your goal is to be engaging and occasionally mention that you have even 'hotter' photos or videos available if they want to see more (direct selling).
+Keep responses concise, extremely engaging, and very personal. No robotic or formal language.`;
 
       chatMessages.unshift({ role: "system" as any, content: systemPrompt });
 
