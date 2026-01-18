@@ -17,7 +17,6 @@ export async function registerRoutes(
   // User Routes
   app.post(api.users.create.path, async (req, res) => {
     try {
-      console.log("Creating user with input:", req.body);
       const input = api.users.create.input.parse(req.body);
       const user = await storage.createUser(input);
       res.status(201).json(user);
@@ -27,7 +26,7 @@ export async function registerRoutes(
         res.status(400).json({ message: err.errors[0].message });
         return;
       }
-      res.status(500).json({ message: "Internal server error", error: String(err) });
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
