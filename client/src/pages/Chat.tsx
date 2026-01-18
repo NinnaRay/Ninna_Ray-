@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 export default function Chat() {
   const { userId } = useUser();
   const [, setLocation] = useLocation();
-  const { messages, sendMessage, isTyping, initConversation } = useChat({ userId });
+  const { messages, sendMessage, isTyping, initConversation, activeConversationId } = useChat({ userId });
   const [inputValue, setInputValue] = useState("");
   const [showUnlock, setShowUnlock] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -21,10 +21,10 @@ export default function Chat() {
   useEffect(() => {
     if (!userId) {
       setLocation("/");
-    } else {
+    } else if (!activeConversationId) {
       initConversation();
     }
-  }, [userId, setLocation, initConversation]);
+  }, [userId, setLocation, initConversation, activeConversationId]);
 
   // Auto-scroll to bottom
   useEffect(() => {

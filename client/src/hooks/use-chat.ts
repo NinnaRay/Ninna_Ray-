@@ -16,6 +16,7 @@ export function useChat({ userId }: UseChatProps) {
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   // Store the active conversation ID
   const conversationIdRef = useRef<number | null>(null);
 
@@ -26,12 +27,13 @@ export function useChat({ userId }: UseChatProps) {
 
     // Check if we have one already stored or fetch latest
     try {
-      const res = await fetch("/api/conversations");
+      const res = await fetch(`/api/conversations?userId=${userId}`);
       if (!res.ok) throw new Error("Failed to fetch conversations");
       const convs = await res.json();
       
       if (convs.length > 0) {
         conversationIdRef.current = convs[0].id;
+        setActiveConversationId(convs[0].id);
         // Fetch history
         const histRes = await fetch(`/api/conversations/${convs[0].id}`);
         if (histRes.ok) {
@@ -47,11 +49,12 @@ export function useChat({ userId }: UseChatProps) {
         const createRes = await fetch("/api/conversations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "Chat with Lexi" }),
+          body: JSON.stringify({ userId, title: "Chat with Lexi" }),
         });
         if (createRes.ok) {
           const newConv = await createRes.json();
           conversationIdRef.current = newConv.id;
+          setActiveConversationId(newConv.id);
           // Add welcome message from AI locally
           setMessages([{
             id: "welcome",
@@ -132,5 +135,6 @@ export function useChat({ userId }: UseChatProps) {
     sendMessage,
     isTyping,
     initConversation,
+    activeConversationId,
   };
 }
