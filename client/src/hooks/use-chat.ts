@@ -1,0 +1,136 @@
+import { useState, useCallback, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+interface Message {
+  id: string; // Temporary ID for UI or DB ID
+  role: "user" | "assistant";
+  content: string;
+  isTyping?: boolean;
+}
+
+interface UseChatProps {
+  userId: number | null;
+}
+
+export function useChat({ userId }: UseChatProps) {
+  const queryClient = useQueryClient();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  // Store the active conversation ID
+  const conversationIdRef = useRef<number | null>(null);
+
+  // 1. Get or Create Conversation
+  // We'll just use a single conversation for simplicity in this MVP
+  const initConversation = useCallback(async () => {
+    if (!userId) return;
+
+    // Check if we have one already stored or fetch latest
+    try {
+      const res = await fetch("/api/conversations");
+      if (!res.ok) throw new Error("Failed to fetch conversations");
+      const convs = await res.json();
+      
+      if (convs.length > 0) {
+        conversationIdRef.current = convs[0].id;
+        // Fetch history
+        const histRes = await fetch(`/api/conversations/${convs[0].id}`);
+        if (histRes.ok) {
+           const data = await histRes.json();
+           setMessages(data.messages.map((m: any) => ({
+             id: m.id.toString(),
+             role: m.role,
+             content: m.content
+           })));
+        }
+      } else {
+        // Create new
+        const createRes = await fetch("/api/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Chat with Lexi" }),
+        });
+        if (createRes.ok) {
+          const newConv = await createRes.json();
+          conversationIdRef.current = newConv.id;
+          // Add welcome message from AI locally
+          setMessages([{
+            id: "welcome",
+            role: "assistant",
+            content: "Hey babe... I've been waiting for you. What kept you? 😉"
+          }]);
+        }
+      }
+    } catch (err) {
+      console.error("Setup failed", err);
+    }
+  }, [userId]);
+
+  // 2. Send Message & Stream Response
+  const sendMessage = async (content: string) => {
+    if (!conversationIdRef.current || !content.trim()) return;
+
+    // Optimistic UI update
+    const tempId = Date.now().toString();
+    setMessages(prev => [...prev, { id: tempId, role: "user", content }]);
+    setIsTyping(true);
+
+    try {
+      const res = await fetch(`/api/conversations/${conversationIdRef.current}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+
+      if (!res.ok) throw new Error("Failed to send");
+
+      // Handle SSE Stream
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No reader");
+
+      const decoder = new TextDecoder();
+      let aiResponseText = "";
+      
+      // Add placeholder for AI message
+      const aiMsgId = (Date.now() + 1).toString();
+      setMessages(prev => [...prev, { id: aiMsgId, role: "assistant", content: "", isTyping: true }]);
+      setIsTyping(false); // We are now streaming, so generic "typing" indicator off, text streaming on
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n\n");
+        
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.content) {
+                aiResponseText += data.content;
+                setMessages(prev => prev.map(msg => 
+                  msg.id === aiMsgId 
+                    ? { ...msg, content: aiResponseText, isTyping: false } 
+                    : msg
+                ));
+              }
+            } catch (e) {
+              console.error("Parse error", e);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Message failed", err);
+      setIsTyping(false);
+    }
+  };
+
+  return {
+    messages,
+    sendMessage,
+    isTyping,
+    initConversation,
+  };
+}
