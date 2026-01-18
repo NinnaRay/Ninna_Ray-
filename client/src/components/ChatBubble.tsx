@@ -1,5 +1,7 @@
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface ChatBubbleProps {
   role: "user" | "assistant";
@@ -34,7 +36,9 @@ export function ChatBubble({ role, content, isTyping }: ChatBubbleProps) {
             <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce" />
           </div>
         ) : (
-          <p className="whitespace-pre-wrap">{content}</p>
+          <div className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-a:text-pink-500 prose-a:underline hover:prose-a:text-pink-400 break-words">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          </div>
         )}
       </div>
     </motion.div>
