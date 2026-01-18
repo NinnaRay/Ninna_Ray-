@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 
+import ninnaPhoto from "@assets/IMG_4700_1768775323977.jpeg";
+
 export default function Landing() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -53,7 +55,7 @@ export default function Landing() {
         <Card className="border-pink-500/20 bg-black/40 backdrop-blur-2xl shadow-2xl overflow-hidden rounded-3xl">
           <div className="relative h-64 overflow-hidden">
             <img 
-              src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=1000&auto=format&fit=crop" 
+              src={ninnaPhoto} 
               alt="Ninna Ray"
               className="w-full h-full object-cover"
             />

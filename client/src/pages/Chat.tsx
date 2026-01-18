@@ -7,6 +7,8 @@ import { Send, LogOut, ChevronLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 
+import ninnaPhoto from "@assets/IMG_4700_1768775323977.jpeg";
+
 export default function Chat() {
   const [user, setUser] = useState<any>(null);
   const [, setLocation] = useLocation();
@@ -60,7 +62,7 @@ export default function Chat() {
           <div className="relative">
             <div className="w-10 h-10 rounded-full border-2 border-pink-500/50 p-0.5">
                <img 
-                 src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop" 
+                 src={ninnaPhoto} 
                  alt="Ninna Ray" 
                  className="w-full h-full rounded-full object-cover"
                />
