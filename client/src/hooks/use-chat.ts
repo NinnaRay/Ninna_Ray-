@@ -114,7 +114,7 @@ export function useChat({ userId }: UseChatProps) {
                 aiResponseText += data.content;
                 setMessages(prev => prev.map(msg => 
                   msg.id === aiMsgId 
-                    ? { ...msg, content: aiResponseText, isTyping: false } 
+                    ? { ...msg, content: aiResponseText } 
                     : msg
                 ));
               }
