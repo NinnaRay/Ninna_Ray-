@@ -118,8 +118,12 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         stream: true,
       });
 
-      // 1. Random delay 10s - 2min (10000ms - 120000ms) before starting to "type"
-      const initialDelay = Math.floor(Math.random() * (120000 - 10000 + 1)) + 10000;
+      // 1. Random delay before starting to "type"
+      // Normal response: 3-8s
+      // Proactive response: already triggered by 3min timer, so let's start typing within 2-5s
+      const initialDelay = isProactive 
+        ? Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000 
+        : Math.floor(Math.random() * (8000 - 3000 + 1)) + 3000;
       await new Promise(resolve => setTimeout(resolve, initialDelay));
 
       let fullResponse = "";
