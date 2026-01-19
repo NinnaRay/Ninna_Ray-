@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useChat } from "@/hooks/use-chat";
 import { ChatBubble } from "@/components/ChatBubble";
 import { Button } from "@/components/ui/button";
