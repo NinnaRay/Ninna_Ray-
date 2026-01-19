@@ -113,20 +113,22 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         const delta = chunk.choices[0]?.delta?.content || "";
         if (delta) {
           fullResponse += delta;
-          // Split the delta into words to simulate chunked reveal
-          const words = delta.split(/(\s+)/);
-          for (let i = 0; i < words.length; i += 2) {
-            // Reconstruct the word + its following space/whitespace
-            const word = words[i];
-            const space = words[i + 1] || "";
-            const combined = word + space;
+          
+          let i = 0;
+          while (i < delta.length) {
+            // Random chunk size between 1 and 6 characters
+            const chunkSize = Math.floor(Math.random() * 6) + 1;
+            const subChunk = delta.substring(i, i + chunkSize);
             
-            if (combined) {
-              res.write(`data: ${JSON.stringify({ content: combined })}\n\n`);
-              // Delay based on word length for a natural feel
-              await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 150));
-            }
+            res.write(`data: ${JSON.stringify({ content: subChunk })}\n\n`);
+            
+            // Random delay between 50ms and 300ms
+            const delay = Math.random() * (300 - 50) + 50;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            i += chunkSize;
           }
+
           // If the delta contains sentence-ending punctuation, add a "thinking" pause
           if (/[.!?]/.test(delta)) {
             await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
