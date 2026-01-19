@@ -15,6 +15,23 @@ export default function Chat() {
   const { messages, sendMessage, isTyping, initConversation, activeConversationId } = useChat({ userId: user?.id });
   const [inputValue, setInputValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const proactiveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const resetProactiveTimer = useCallback(() => {
+    if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current);
+    proactiveTimerRef.current = setTimeout(() => {
+      if (activeConversationId) {
+        sendMessage("", true); // Special flag for proactive message
+      }
+    }, 180000); // 3 minutes of inactivity
+  }, [activeConversationId, sendMessage]);
+
+  useEffect(() => {
+    resetProactiveTimer();
+    return () => {
+      if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current);
+    };
+  }, [messages, resetProactiveTimer]);
 
   useEffect(() => {
     const savedUser = localStorage.getItem("ninna_user");
