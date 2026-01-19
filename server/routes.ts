@@ -41,16 +41,7 @@ export async function registerRoutes(
     const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
     if (!userId) return res.status(400).json({ message: "userId is required" });
     const conversations = await storage.getConversationsByUser(userId);
-    // Random delay mezi 60–120 sekundami (1–2 minuty)
-    // Random delay mezi 60–120 sekundami (1–2 minuty)
-    const delay = Math.floor(Math.random() * 60000) + 60000; // 60 000 ms = 1 minuta
-
-    setTimeout(() => {
-      res.json({ message: aiResponse });
-    }, delay);
-    setTimeout(() => {
-      res.json({ message: aiResponse });
-    }, delay);
+    res.json(conversations);
   });
 
   app.post("/api/conversations", async (req, res) => {
@@ -109,11 +100,31 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         stream: true,
       });
 
+      let fullResponse = "";
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta?.content || "";
         if (delta) {
           fullResponse += delta;
-          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+          
+          let i = 0;
+          while (i < delta.length) {
+            // Random chunk size between 1 and 6 characters
+            const chunkSize = Math.floor(Math.random() * 6) + 1;
+            const subChunk = delta.substring(i, i + chunkSize);
+            
+            res.write(`data: ${JSON.stringify({ content: subChunk })}\n\n`);
+            
+            // Random delay between 50ms and 300ms
+            const delay = Math.random() * (300 - 50) + 50;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            i += chunkSize;
+          }
+
+          // If the delta contains sentence-ending punctuation, add a "thinking" pause
+          if (/[.!?]/.test(delta)) {
+            await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
+          }
         }
       }
       
