@@ -41,7 +41,16 @@ export async function registerRoutes(
     const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
     if (!userId) return res.status(400).json({ message: "userId is required" });
     const conversations = await storage.getConversationsByUser(userId);
-    res.json(conversations);
+    // Random delay mezi 60–120 sekundami (1–2 minuty)
+    // Random delay mezi 60–120 sekundami (1–2 minuty)
+    const delay = Math.floor(Math.random() * 60000) + 60000; // 60 000 ms = 1 minuta
+
+    setTimeout(() => {
+      res.json({ message: aiResponse });
+    }, delay);
+    setTimeout(() => {
+      res.json({ message: aiResponse });
+    }, delay);
   });
 
   app.post("/api/conversations", async (req, res) => {
@@ -100,12 +109,20 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         stream: true,
       });
 
-      let fullResponse = "";
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta?.content || "";
         if (delta) {
           fullResponse += delta;
-          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+          // Split the delta into characters or small chunks to simulate typing speed
+          for (const char of delta) {
+            res.write(`data: ${JSON.stringify({ content: char })}\n\n`);
+            // Add a small delay for each character
+            await new Promise(resolve => setTimeout(resolve, Math.random() * 40 + 20));
+          }
+          // If the delta contains sentence-ending punctuation, add a "thinking" pause
+          if (/[.!?]/.test(delta)) {
+            await new Promise(resolve => setTimeout(resolve, 600 + Math.random() * 400));
+          }
         }
       }
 
