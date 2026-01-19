@@ -111,7 +111,11 @@ export function useChat({ userId }: UseChatProps) {
               const data = JSON.parse(line.slice(6));
               
               if (data.content) {
-                aiResponseText += data.content;
+                if (data.content === "\b") {
+                  aiResponseText = aiResponseText.slice(0, -1);
+                } else {
+                  aiResponseText += data.content;
+                }
                 setMessages(prev => prev.map(msg => 
                   msg.id === aiMsgId 
                     ? { ...msg, content: aiResponseText } 
