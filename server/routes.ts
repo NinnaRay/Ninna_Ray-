@@ -100,6 +100,10 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         stream: true,
       });
 
+      // 1. Random delay 10s - 2min (10000ms - 120000ms) before starting to "type"
+      const initialDelay = Math.floor(Math.random() * (120000 - 10000 + 1)) + 10000;
+      await new Promise(resolve => setTimeout(resolve, initialDelay));
+
       let fullResponse = "";
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta?.content || "";
@@ -108,27 +112,44 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
           
           let i = 0;
           while (i < delta.length) {
-            // Random chunk size between 1 and 6 characters
-            const chunkSize = Math.floor(Math.random() * 6) + 1;
-            const subChunk = delta.substring(i, i + chunkSize);
+            // 2. Typing character by character
+            const char = delta[i];
             
-            res.write(`data: ${JSON.stringify({ content: subChunk })}\n\n`);
+            // 3. Small typos and immediate corrections (approx 2% chance)
+            if (Math.random() < 0.02 && /[a-zA-Z]/.test(char)) {
+              const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
+              res.write(`data: ${JSON.stringify({ content: wrongChar })}\n\n`);
+              await new Promise(resolve => setTimeout(resolve, Math.random() * 200 + 100));
+              res.write(`data: ${JSON.stringify({ content: "\b" })}\n\n`); // Backspace
+              await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 50));
+            }
+
+            res.write(`data: ${JSON.stringify({ content: char })}\n\n`);
             
-            // Random delay between 50ms and 300ms
-            const delay = Math.random() * (300 - 50) + 50;
-            await new Promise(resolve => setTimeout(resolve, delay));
+            // Random delay between 30ms and 400ms (sometimes fast, sometimes slow)
+            const typingDelay = Math.random() < 0.3 ? (Math.random() * 50 + 20) : (Math.random() * 300 + 100);
+            await new Promise(resolve => setTimeout(resolve, typingDelay));
             
-            i += chunkSize;
+            i++;
           }
 
-          // If the delta contains sentence-ending punctuation, add a "thinking" pause
+          // Sentence-ending punctuation pause
           if (/[.!?]/.test(delta)) {
-            await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
+            await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 600));
           }
         }
       }
       
+      // 4. Randomly add images (approx 35% chance)
+      if (Math.random() < 0.35) {
+        const imagePath = "/attached_assets/IMG_4700_1768775323977.jpeg";
+        const imageMarkdown = `\n\n![Ninna](${imagePath})`;
+        fullResponse += imageMarkdown;
+        res.write(`data: ${JSON.stringify({ content: imageMarkdown })}\n\n`);
+      }
+
       await storage.createMessage(conversationId, "assistant", fullResponse);
+      // 5. Single res.end() handled by the structure
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (error) {
