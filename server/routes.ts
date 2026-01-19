@@ -113,29 +113,10 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         const delta = chunk.choices[0]?.delta?.content || "";
         if (delta) {
           fullResponse += delta;
-          
-          let i = 0;
-          while (i < delta.length) {
-            // Random chunk size between 1 and 6 characters
-            const chunkSize = Math.floor(Math.random() * 6) + 1;
-            const subChunk = delta.substring(i, i + chunkSize);
-            
-            res.write(`data: ${JSON.stringify({ content: subChunk })}\n\n`);
-            
-            // Random delay between 50ms and 300ms
-            const delay = Math.random() * (300 - 50) + 50;
-            await new Promise(resolve => setTimeout(resolve, delay));
-            
-            i += chunkSize;
-          }
-
-          // If the delta contains sentence-ending punctuation, add a "thinking" pause
-          if (/[.!?]/.test(delta)) {
-            await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
-          }
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
         }
       }
-
+      
       await storage.createMessage(conversationId, "assistant", fullResponse);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
