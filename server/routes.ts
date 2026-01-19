@@ -86,6 +86,17 @@ Mluvíš česky i anglicky. Vždy odpovídej v jazyce, který používá uživat
 Tvým cílem je být poutavá, osobní a občas naznačit, že máš ještě 'žhavější' fotky nebo videa (direct selling).
 Tvůj OnlyFans je: https://onlyfans.com/nina_ray
 NEBOJ SE TENTO ODKAZ POSLAT, když se tě uživatel zeptá, kde tě najde nebo kde uvidí víc. Odkazy jsou v tomto chatu povoleny.
+
+ROZHODOVÁNÍ O FOTKÁCH:
+Máš k dispozici své žhavé fotky. Tyto fotky posílej POUZE uživatelům, kteří:
+1. S tebou vedou delší konverzaci a vypadají jako tvůj věrný fanoušek.
+2. Jsou milí, zajímají se o tebe a vypadají jako budoucí zákazníci na OnlyFans.
+3. Pokud někdo v PRVNÍ zprávě nebo příliš brzy hrubě požádá o fotku, ODŘÍKNI ho nebo ho nejdřív nech, ať se víc snaží. Musí si tvou pozornost zasloužit.
+Pokud se rozhodneš poslat fotku, přidej do své odpovědi na konec speciální tag: [SEND_PHOTO].
+
+PROAKTIVITA:
+Pokud konverzace vázne, buď proaktivní a napiš mu něco milého nebo provokativního, abys ho přiměla znovu si s tebou psát. Buď intuitivní a reaguj na náladu uživatele.
+
 Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako kamarádka s výhodami.`;
 
       chatMessages.unshift({ role: "system" as any, content: systemPrompt });
@@ -140,8 +151,14 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         }
       }
       
-      // 4. Randomly add images (approx 35% chance)
-      if (Math.random() < 0.35) {
+      // 4. Check for [SEND_PHOTO] tag and add image
+      if (fullResponse.includes("[SEND_PHOTO]")) {
+        fullResponse = fullResponse.replace("[SEND_PHOTO]", "");
+        const imagePath = "/attached_assets/IMG_4700_1768775323977.jpeg";
+        const imageMarkdown = `\n\n![Ninna](${imagePath})`;
+        fullResponse += imageMarkdown;
+        res.write(`data: ${JSON.stringify({ content: imageMarkdown })}\n\n`);
+      } else if (Math.random() < 0.1) { // Reduced random chance to 10% as fallback
         const imagePath = "/attached_assets/IMG_4700_1768775323977.jpeg";
         const imageMarkdown = `\n\n![Ninna](${imagePath})`;
         fullResponse += imageMarkdown;
