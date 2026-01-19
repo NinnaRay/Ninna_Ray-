@@ -69,19 +69,21 @@ export function useChat({ userId }: UseChatProps) {
   }, [userId]);
 
   // 2. Send Message & Stream Response
-  const sendMessage = async (content: string) => {
-    if (!conversationIdRef.current || !content.trim()) return;
+  const sendMessage = async (content: string, isProactive = false) => {
+    if (!conversationIdRef.current || (!content.trim() && !isProactive)) return;
 
     // Optimistic UI update
-    const tempId = Date.now().toString();
-    setMessages(prev => [...prev, { id: tempId, role: "user", content }]);
+    if (!isProactive) {
+      const tempId = Date.now().toString();
+      setMessages(prev => [...prev, { id: tempId, role: "user", content }]);
+    }
     setIsTyping(true);
 
     try {
       const res = await fetch(`/api/conversations/${conversationIdRef.current}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, isProactive }),
       });
 
       if (!res.ok) throw new Error("Failed to send");

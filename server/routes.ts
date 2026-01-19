@@ -62,12 +62,14 @@ export async function registerRoutes(
   app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
     try {
       const conversationId = parseInt(req.params.id);
-      const { content } = req.body;
+      const { content, isProactive } = req.body;
       const conversation = await storage.getConversation(conversationId);
       if (!conversation) return res.status(404).json({ message: "Conversation not found" });
 
-      await storage.createMessage(conversationId, "user", content);
-      await storage.incrementMessageCount(conversation.userId);
+      if (!isProactive) {
+        await storage.createMessage(conversationId, "user", content);
+        await storage.incrementMessageCount(conversation.userId);
+      }
 
       const user = await storage.getUser(conversation.userId);
       const userName = user?.name || "Babe";
@@ -96,6 +98,7 @@ Pokud se rozhodneš poslat fotku, přidej do své odpovědi na konec speciální
 
 PROAKTIVITA:
 Pokud konverzace vázne, buď proaktivní a napiš mu něco milého nebo provokativního, abys ho přiměla znovu si s tebou psát. Buď intuitivní a reaguj na náladu uživatele.
+${isProactive ? "Uživatel se dlouho neozval. Napiš mu proaktivní zprávu, která ho zaujme a přiměje k odpovědi." : ""}
 
 Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako kamarádka s výhodami.`;
 
