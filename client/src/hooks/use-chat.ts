@@ -88,6 +88,8 @@ export function useChat({ userId }: UseChatProps) {
 
       if (!res.ok) throw new Error("Failed to send");
 
+      setIsTyping(true); // Ensure typing indicator shows during initial server delay
+
       // Handle SSE Stream
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No reader");

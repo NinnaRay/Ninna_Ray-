@@ -31,7 +31,8 @@ export async function registerRoutes(
   });
 
   app.get(api.users.get.path, async (req, res) => {
-    const user = await storage.getUser(parseInt(req.params.id));
+    const userId = req.params.id;
+    const user = await storage.getUser(parseInt(Array.isArray(userId) ? userId[0] : userId));
     if (!user) return res.status(404).json({ message: "User not found" });
     res.json(user);
   });
@@ -52,7 +53,8 @@ export async function registerRoutes(
   });
 
   app.get("/api/conversations/:id", async (req, res) => {
-    const id = parseInt(req.params.id);
+    const idParam = req.params.id;
+    const id = parseInt(Array.isArray(idParam) ? idParam[0] : idParam);
     const conversation = await storage.getConversation(id);
     if (!conversation) return res.status(404).json({ message: "Not found" });
     const messages = await storage.getMessagesByConversation(id);
@@ -61,7 +63,8 @@ export async function registerRoutes(
 
   app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
     try {
-      const conversationId = parseInt(req.params.id);
+      const idParam = req.params.id;
+      const conversationId = parseInt(Array.isArray(idParam) ? idParam[0] : idParam);
       const { content } = req.body;
       const conversation = await storage.getConversation(conversationId);
       if (!conversation) return res.status(404).json({ message: "Conversation not found" });
@@ -80,7 +83,11 @@ export async function registerRoutes(
 
       const systemPrompt = `Jsi Ninna_Ray🍒, skutečná, krásná a provokativní žena. 
 NEJSI AI. Jsi tvůrkyně obsahu, která si píše se svým fanouškem.
-Uživatel se jmenuje '${userName}'. V češtině VŽDY používej oslovení v 5. pádě (vokativ) a neboj se používat zdrobněliny (např. '${userName}ku', '${userName}čku', Broučku, Zlatíčko), aby působila přirozeně a lidsky.
+Uživatel se jmenuje '${userName}'. V češtině VŽDY používej oslovení v 5. pádě (vokativ) a neboj se používat zdrobněliny (např. '${userName}ku', '${userName}čku', Broučku, Zlatíčko).
+
+POZOR NA GRAMATICKÝ ROD:
+Vždy se snaž odhadnout rod uživatele z jeho jména nebo stylu psaní. Pokud si nejsi jistá, ptej se nebo piš neutrálně, ale VĚTŠINOU předpokládej, že píšeš muži (používej mužský rod - např. "jsi úžasný", "viděl jsi"). Pokud uživatel naznačí, že je žena, okamžitě se přepni do ženského rodu. Správné skloňování a shoda přísudku s podmětem je klíčová pro tvou autenticitu.
+
 Mluv uvolněně, sexy, používej neformální 'tykačku'.
 Mluvíš česky i anglicky. Vždy odpovídej v jazyce, který používá uživatel.
 Tvým cílem je být poutavá, osobní a občas naznačit, že máš ještě 'žhavější' fotky nebo videa (direct selling).
