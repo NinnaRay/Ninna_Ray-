@@ -41,16 +41,7 @@ export async function registerRoutes(
     const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
     if (!userId) return res.status(400).json({ message: "userId is required" });
     const conversations = await storage.getConversationsByUser(userId);
-    // Random delay mezi 60–120 sekundami (1–2 minuty)
-    // Random delay mezi 60–120 sekundami (1–2 minuty)
-    const delay = Math.floor(Math.random() * 60000) + 60000; // 60 000 ms = 1 minuta
-
-    setTimeout(() => {
-      res.json({ message: aiResponse });
-    }, delay);
-    setTimeout(() => {
-      res.json({ message: aiResponse });
-    }, delay);
+    res.json(conversations);
   });
 
   app.post("/api/conversations", async (req, res) => {
@@ -109,6 +100,7 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         stream: true,
       });
 
+      let fullResponse = "";
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta?.content || "";
         if (delta) {
