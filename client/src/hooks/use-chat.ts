@@ -69,21 +69,19 @@ export function useChat({ userId }: UseChatProps) {
   }, [userId]);
 
   // 2. Send Message & Stream Response
-  const sendMessage = async (content: string, isProactive = false) => {
-    if (!conversationIdRef.current || (!content.trim() && !isProactive)) return;
+  const sendMessage = async (content: string) => {
+    if (!conversationIdRef.current || !content.trim()) return;
 
     // Optimistic UI update
-    if (!isProactive) {
-      const tempId = Date.now().toString();
-      setMessages(prev => [...prev, { id: tempId, role: "user", content }]);
-    }
+    const tempId = Date.now().toString();
+    setMessages(prev => [...prev, { id: tempId, role: "user", content }]);
     setIsTyping(true);
 
     try {
       const res = await fetch(`/api/conversations/${conversationIdRef.current}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, isProactive }),
+        body: JSON.stringify({ content }),
       });
 
       if (!res.ok) throw new Error("Failed to send");
@@ -113,11 +111,7 @@ export function useChat({ userId }: UseChatProps) {
               const data = JSON.parse(line.slice(6));
               
               if (data.content) {
-                if (data.content === "\b") {
-                  aiResponseText = aiResponseText.slice(0, -1);
-                } else {
-                  aiResponseText += data.content;
-                }
+                aiResponseText += data.content;
                 setMessages(prev => prev.map(msg => 
                   msg.id === aiMsgId 
                     ? { ...msg, content: aiResponseText, isTyping: false } 
