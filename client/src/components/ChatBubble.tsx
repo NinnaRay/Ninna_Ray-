@@ -2,14 +2,16 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Check, CheckCheck } from "lucide-react";
 
 interface ChatBubbleProps {
   role: "user" | "assistant";
   content: string;
   isTyping?: boolean;
+  isSeen?: boolean;
 }
 
-export function ChatBubble({ role, content, isTyping }: ChatBubbleProps) {
+export function ChatBubble({ role, content, isTyping, isSeen }: ChatBubbleProps) {
   const isUser = role === "user";
 
   return (
@@ -17,13 +19,13 @@ export function ChatBubble({ role, content, isTyping }: ChatBubbleProps) {
       initial={{ opacity: 0, y: 10, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       className={cn(
-        "flex w-full mb-4",
-        isUser ? "justify-end" : "justify-start"
+        "flex flex-col w-full mb-4",
+        isUser ? "items-end" : "items-start"
       )}
     >
       <div
         className={cn(
-          "max-w-[80%] px-5 py-3 rounded-2xl text-sm md:text-base leading-relaxed shadow-md",
+          "max-w-[80%] px-5 py-3 rounded-2xl text-sm md:text-base leading-relaxed shadow-md relative",
           isUser
             ? "bg-gradient-to-br from-primary to-secondary text-white rounded-br-none"
             : "bg-card border border-white/10 text-gray-200 rounded-bl-none shadow-black/20"
@@ -41,6 +43,22 @@ export function ChatBubble({ role, content, isTyping }: ChatBubbleProps) {
           </div>
         )}
       </div>
+      
+      {isUser && (
+        <div className="flex items-center gap-1 mt-1 px-1">
+          {isSeen ? (
+            <>
+              <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-tighter">Seen</span>
+              <CheckCheck className="w-3 h-3 text-pink-500" />
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-tighter">Sent</span>
+              <Check className="w-3 h-3 text-neutral-500" />
+            </>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }

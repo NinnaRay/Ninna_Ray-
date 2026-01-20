@@ -103,6 +103,9 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
       const typingIndicatorDelay = Math.floor(Math.random() * 4000) + 3000;
       await new Promise(resolve => setTimeout(resolve, typingIndicatorDelay));
 
+      // 3. Mark last user message as "Seen" right before starting to stream text
+      res.write(`data: ${JSON.stringify({ isSeen: true })}\n\n`);
+
       const stream = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: chatMessages,
@@ -117,22 +120,23 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
           
           let i = 0;
           while (i < delta.length) {
-            // Random chunk size between 1 and 6 characters
-            const chunkSize = Math.floor(Math.random() * 6) + 1;
+            // Random chunk size between 1 and 4 characters for more "human" feel
+            const chunkSize = Math.floor(Math.random() * 4) + 1;
             const subChunk = delta.substring(i, i + chunkSize);
             
             res.write(`data: ${JSON.stringify({ content: subChunk })}\n\n`);
             
-            // Random delay between 50ms and 300ms
-            const delay = Math.random() * (300 - 50) + 50;
-            await new Promise(resolve => setTimeout(resolve, delay));
+            // Random delay between 50ms and 450ms (simulating variable typing speed)
+            const typingSpeedDelay = Math.random() < 0.2 ? (Math.random() * 600 + 200) : (Math.random() * 200 + 50);
+            await new Promise(resolve => setTimeout(resolve, typingSpeedDelay));
             
             i += chunkSize;
           }
 
-          // If the delta contains sentence-ending punctuation, add a "thinking" pause
+          // If the delta contains sentence-ending punctuation, add a "thinking/correcting" pause
           if (/[.!?]/.test(delta)) {
-            await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
+            const sentencePause = Math.floor(Math.random() * 1500) + 800;
+            await new Promise(resolve => setTimeout(resolve, sentencePause));
           }
         }
       }

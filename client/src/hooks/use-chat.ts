@@ -6,6 +6,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   isTyping?: boolean;
+  isSeen?: boolean;
 }
 
 interface UseChatProps {
@@ -110,6 +111,18 @@ export function useChat({ userId }: UseChatProps) {
             try {
               const data = JSON.parse(line.slice(6));
               
+              if (data.isSeen) {
+                setMessages(prev => {
+                  const lastUserMsgIndex = [...prev].reverse().findIndex(m => m.role === "user");
+                  if (lastUserMsgIndex !== -1) {
+                    const actualIndex = prev.length - 1 - lastUserMsgIndex;
+                    return prev.map((msg, i) => i === actualIndex ? { ...msg, isSeen: true } : msg);
+                  }
+                  return prev;
+                });
+                continue;
+              }
+
               if (data.isTyping) {
                 setIsTyping(true);
                 continue;
