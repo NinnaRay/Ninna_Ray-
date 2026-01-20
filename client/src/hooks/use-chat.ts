@@ -75,7 +75,8 @@ export function useChat({ userId }: UseChatProps) {
     // Optimistic UI update
     const tempId = Date.now().toString();
     setMessages(prev => [...prev, { id: tempId, role: "user", content }]);
-    setIsTyping(true);
+    // We don't set setIsTyping(true) immediately here anymore
+    // It will be set after the random initial delay from the server
 
     try {
       const res = await fetch(`/api/conversations/${conversationIdRef.current}/messages`, {
@@ -92,12 +93,11 @@ export function useChat({ userId }: UseChatProps) {
 
       const decoder = new TextDecoder();
       let aiResponseText = "";
+      let hasStartedTyping = false;
       
       // Add placeholder for AI message
       const aiMsgId = (Date.now() + 1).toString();
-      setMessages(prev => [...prev, { id: aiMsgId, role: "assistant", content: "", isTyping: true }]);
-      setIsTyping(false); // We are now streaming, so generic "typing" indicator off, text streaming on
-
+      
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -110,7 +110,17 @@ export function useChat({ userId }: UseChatProps) {
             try {
               const data = JSON.parse(line.slice(6));
               
+              if (data.isTyping) {
+                setIsTyping(true);
+                continue;
+              }
+
               if (data.content) {
+                if (!hasStartedTyping) {
+                  setMessages(prev => [...prev, { id: aiMsgId, role: "assistant", content: "", isTyping: true }]);
+                  setIsTyping(false);
+                  hasStartedTyping = true;
+                }
                 aiResponseText += data.content;
                 setMessages(prev => prev.map(msg => 
                   msg.id === aiMsgId 

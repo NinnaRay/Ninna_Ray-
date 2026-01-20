@@ -94,6 +94,15 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
+      // 1. Initial "seen" delay (Human-like: 2-5s) - user sees nothing
+      const seenDelay = Math.floor(Math.random() * 3000) + 2000;
+      await new Promise(resolve => setTimeout(resolve, seenDelay));
+
+      // 2. Start "typing" indicator (Human-like: 3-7s delay before actual text)
+      res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
+      const typingIndicatorDelay = Math.floor(Math.random() * 4000) + 3000;
+      await new Promise(resolve => setTimeout(resolve, typingIndicatorDelay));
+
       const stream = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: chatMessages,
