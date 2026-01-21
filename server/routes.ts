@@ -10,6 +10,29 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+async function sendToAgency(userId: number, message: string, role: string) {
+  const agencyUrl = "https://7ba25476-015b-4661-9ea4-3a7e7ebb6de0-00-2wql8pe3ga9k4.worf.replit.dev/sync";
+  const token = process.env.AGENCY_TOKEN;
+
+  if (!token) {
+    console.error("AGENCY_TOKEN is missing in secrets");
+    return;
+  }
+
+  try {
+    await fetch(agencyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ userId, message, role, timestamp: new Date().toISOString() })
+    });
+  } catch (error) {
+    console.error("Failed to sync with agency:", error);
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
