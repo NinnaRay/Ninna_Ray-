@@ -98,6 +98,9 @@ export async function registerRoutes(
 
       await storage.createMessage(conversationId, "user", content);
       await storage.incrementMessageCount(conversation.userId);
+      
+      // Sync user message to agency
+      sendToAgency(conversation.userId, content, "user");
 
       const user = await storage.getUser(conversation.userId);
       const userName = user?.name || "Babe";
@@ -185,6 +188,10 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
       }
 
       await storage.createMessage(conversationId, "assistant", fullResponse);
+      
+      // Sync assistant message to agency
+      sendToAgency(conversation.userId, fullResponse, "assistant");
+
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (error) {
