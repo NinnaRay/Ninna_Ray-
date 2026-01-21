@@ -30,9 +30,11 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.users.get.path, async (req, res) => {
+      app.get(api.users.get.path, async (req, res) => {
     const userId = req.params.id;
-    const user = await storage.getUser(parseInt(Array.isArray(userId) ? userId[0] : userId));
+    const id = parseInt(Array.isArray(userId) ? userId[0] : userId);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
+    const user = await storage.getUser(id);
     if (!user) return res.status(404).json({ message: "User not found" });
     res.json(user);
   });
@@ -52,19 +54,21 @@ export async function registerRoutes(
     res.status(201).json(conversation);
   });
 
-  app.get("/api/conversations/:id", async (req, res) => {
+      app.get("/api/conversations/:id", async (req, res) => {
     const idParam = req.params.id;
     const id = parseInt(Array.isArray(idParam) ? idParam[0] : idParam);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid conversation ID" });
     const conversation = await storage.getConversation(id);
     if (!conversation) return res.status(404).json({ message: "Not found" });
     const messages = await storage.getMessagesByConversation(id);
     res.json({ ...conversation, messages });
   });
 
-  app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
+      app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
     try {
       const idParam = req.params.id;
       const conversationId = parseInt(Array.isArray(idParam) ? idParam[0] : idParam);
+      if (isNaN(conversationId)) return res.status(400).json({ message: "Invalid conversation ID" });
       const { content } = req.body;
       const conversation = await storage.getConversation(conversationId);
       if (!conversation) return res.status(404).json({ message: "Conversation not found" });

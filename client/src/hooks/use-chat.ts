@@ -104,12 +104,14 @@ export function useChat({ userId }: UseChatProps) {
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split("\n\n");
-        
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
+              const lines = chunk.split("\n\n");
+              
+              for (const line of lines) {
+                if (line.trim().startsWith("data: ")) {
+                  try {
+                    const dataStr = line.trim().slice(6);
+                    if (!dataStr) continue;
+                    const data = JSON.parse(dataStr);
               
               if (data.isSeen) {
                 setMessages(prev => {
