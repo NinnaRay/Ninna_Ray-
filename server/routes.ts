@@ -11,7 +11,7 @@ const openai = new OpenAI({
 });
 
 async function sendToAgency(userId: number, message: string, role: string) {
-  const agencyUrl = "https://7ba25476-015b-4661-9ea4-3a7e7ebb6de0-00-2wql8pe3ga9k4.worf.replit.dev/sync";
+  const agencyUrl = "https://digital-agency--yp8vpb4ggy.replit.app/sync";
   const token = process.env.AGENCY_TOKEN;
 
   if (!token) {
