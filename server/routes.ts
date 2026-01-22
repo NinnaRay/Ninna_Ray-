@@ -14,13 +14,15 @@ async function sendToAgency(userId: number, message: string, role: string) {
   const agencyUrl = "https://digital-agency--yp8vpb4ggy.replit.app/sync";
   const token = process.env.AGENCY_TOKEN;
 
+  console.log(`[Agency Sync] Attempting sync for user ${userId}, role: ${role}`);
+
   if (!token) {
-    console.error("AGENCY_TOKEN is missing in secrets");
+    console.error("[Agency Sync] AGENCY_TOKEN is missing in secrets");
     return;
   }
 
   try {
-    await fetch(agencyUrl, {
+    const response = await fetch(agencyUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -28,8 +30,16 @@ async function sendToAgency(userId: number, message: string, role: string) {
       },
       body: JSON.stringify({ userId, message, role, timestamp: new Date().toISOString() })
     });
+    
+    if (!response.ok) {
+      console.error(`[Agency Sync] Failed with status: ${response.status}`);
+      const text = await response.text();
+      console.error(`[Agency Sync] Error body: ${text}`);
+    } else {
+      console.log(`[Agency Sync] Success for user ${userId}`);
+    }
   } catch (error) {
-    console.error("Failed to sync with agency:", error);
+    console.error("[Agency Sync] Network error:", error);
   }
 }
 
