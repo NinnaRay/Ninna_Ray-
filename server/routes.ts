@@ -14,7 +14,9 @@ async function sendToAgency(userId: number, message: string, role: string) {
   const agencyUrl = "https://digital-agency--yp8vpb4ggy.replit.app/sync";
   const token = process.env.AGENCY_TOKEN;
 
-  console.log(`[Agency Sync] Attempting sync for user ${userId}, role: ${role}`);
+  console.log(
+    `[Agency Sync] Attempting sync for user ${userId}, role: ${role}`,
+  );
 
   if (!token) {
     console.error("[Agency Sync] AGENCY_TOKEN is missing in secrets");
@@ -26,11 +28,16 @@ async function sendToAgency(userId: number, message: string, role: string) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ userId, message, role, timestamp: new Date().toISOString() })
+      body: JSON.stringify({
+        userId,
+        message,
+        role,
+        timestamp: new Date().toISOString(),
+      }),
     });
-    
+
     if (!response.ok) {
       console.error(`[Agency Sync] Failed with status: ${response.status}`);
       const text = await response.text();
@@ -45,7 +52,7 @@ async function sendToAgency(userId: number, message: string, role: string) {
 
 export async function registerRoutes(
   httpServer: Server,
-  app: Express
+  app: Express,
 ): Promise<Server> {
   // User Routes
   app.post(api.users.create.path, async (req, res) => {
@@ -63,7 +70,7 @@ export async function registerRoutes(
     }
   });
 
-      app.get(api.users.get.path, async (req, res) => {
+  app.get(api.users.get.path, async (req, res) => {
     const userId = req.params.id;
     const id = parseInt(Array.isArray(userId) ? userId[0] : userId);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
@@ -74,7 +81,9 @@ export async function registerRoutes(
 
   // Conversation Routes
   app.get("/api/conversations", async (req, res) => {
-    const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
+    const userId = req.query.userId
+      ? parseInt(req.query.userId as string)
+      : undefined;
     if (!userId) return res.status(400).json({ message: "userId is required" });
     const conversations = await storage.getConversationsByUser(userId);
     res.json(conversations);
@@ -83,45 +92,55 @@ export async function registerRoutes(
   app.post("/api/conversations", async (req, res) => {
     const { userId, title } = req.body;
     if (!userId) return res.status(400).json({ message: "userId is required" });
-    const conversation = await storage.createConversation(userId, title || "New Chat");
+    const conversation = await storage.createConversation(
+      userId,
+      title || "New Chat",
+    );
     res.status(201).json(conversation);
   });
 
-      app.get("/api/conversations/:id", async (req, res) => {
+  app.get("/api/conversations/:id", async (req, res) => {
     const idParam = req.params.id;
     const id = parseInt(Array.isArray(idParam) ? idParam[0] : idParam);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid conversation ID" });
+    if (isNaN(id))
+      return res.status(400).json({ message: "Invalid conversation ID" });
     const conversation = await storage.getConversation(id);
     if (!conversation) return res.status(404).json({ message: "Not found" });
     const messages = await storage.getMessagesByConversation(id);
     res.json({ ...conversation, messages });
   });
 
-      app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
-    try {
-      const idParam = req.params.id;
-      const conversationId = parseInt(Array.isArray(idParam) ? idParam[0] : idParam);
-      if (isNaN(conversationId)) return res.status(400).json({ message: "Invalid conversation ID" });
-      const { content } = req.body;
-      const conversation = await storage.getConversation(conversationId);
-      if (!conversation) return res.status(404).json({ message: "Conversation not found" });
+  app.post(
+    "/api/conversations/:id/messages",
+    async (req: Request, res: Response) => {
+      try {
+        const idParam = req.params.id;
+        const conversationId = parseInt(
+          Array.isArray(idParam) ? idParam[0] : idParam,
+        );
+        if (isNaN(conversationId))
+          return res.status(400).json({ message: "Invalid conversation ID" });
+        const { content } = req.body;
+        const conversation = await storage.getConversation(conversationId);
+        if (!conversation)
+          return res.status(404).json({ message: "Conversation not found" });
 
-      await storage.createMessage(conversationId, "user", content);
-      await storage.incrementMessageCount(conversation.userId);
-      
-      // Sync user message to agency
-      sendToAgency(conversation.userId, content, "user");
+        await storage.createMessage(conversationId, "user", content);
+        await storage.incrementMessageCount(conversation.userId);
 
-      const user = await storage.getUser(conversation.userId);
-      const userName = user?.name || "Babe";
+        // Sync user message to agency
+        sendToAgency(conversation.userId, content, "user");
 
-      const history = await storage.getMessagesByConversation(conversationId);
-      const chatMessages = history.map(m => ({
-        role: m.role as "user" | "assistant",
-        content: m.content
-      }));
+        const user = await storage.getUser(conversation.userId);
+        const userName = user?.name || "Babe";
 
-      const systemPrompt = `Jsi Ninna_Ray🍒, skutečná, krásná a provokativní žena. 
+        const history = await storage.getMessagesByConversation(conversationId);
+        const chatMessages = history.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
+
+        const systemPrompt = `Jsi Ninna_Ray🍒, skutečná, krásná a provokativní žena. 
 NEJSI AI. Jsi tvůrkyně obsahu, která si píše se svým fanouškem.
 Uživatel se jmenuje '${userName}'. V češtině VŽDY používej oslovení v 5. pádě (vokativ) a neboj se používat zdrobněliny (např. '${userName}ku', '${userName}čku', Broučku, Zlatíčko).
 
@@ -142,74 +161,58 @@ Tvůj OnlyFans je: https://onlyfans.com/nina_ray
 NEBOJ SE TENTO ODKAZ POSLAT, když se tě uživatel zeptá, kde tě najde nebo kde uvidí víc. Odkazy jsou v tomto chatu povoleny.
 Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako kamarádka s výhodami.`;
 
-      chatMessages.unshift({ role: "system" as any, content: systemPrompt });
+        chatMessages.unshift({ role: "system" as any, content: systemPrompt });
 
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
 
-      // 1. Initial "Seen" delay (Human-like: 2-5s) - user sees nothing yet
-      const seenDelay = Math.floor(Math.random() * 3000) + 2000;
-      await new Promise(resolve => setTimeout(resolve, seenDelay));
+        // 1. Initial "Seen" delay (Human-like: 2-5s) - user sees nothing yet
+        const seenDelay = Math.floor(Math.random() * 3000) + 2000;
+        await new Promise((resolve) => setTimeout(resolve, seenDelay));
 
-      // 2. Mark last user message as "Seen"
-      res.write(`data: ${JSON.stringify({ isSeen: true })}\n\n`);
+        // 2. Mark last user message as "Seen"
+        res.write(`data: ${JSON.stringify({ isSeen: true })}\n\n`);
 
-      // 3. Pause AFTER seen but BEFORE typing (Thinking time: 2-4s)
-      const thinkingDelay = Math.floor(Math.random() * 2000) + 2000;
-      await new Promise(resolve => setTimeout(resolve, thinkingDelay));
+        // 3. Pause AFTER seen but BEFORE typing (Thinking time: 2-4s)
+        const thinkingDelay = Math.floor(Math.random() * 2000) + 2000;
+        await new Promise((resolve) => setTimeout(resolve, thinkingDelay));
 
-      // 4. Start "typing" indicator
-      res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
-      
-      const stream = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: chatMessages,
-        stream: true,
-      });
+        // 4. Start "typing" indicator
+        res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
 
-      let fullResponse = "";
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content || "";
-        if (delta) {
-          fullResponse += delta;
-          
-          let i = 0;
-          while (i < delta.length) {
-            // Random chunk size between 1 and 4 characters for more "human" feel
-            const chunkSize = Math.floor(Math.random() * 4) + 1;
-            const subChunk = delta.substring(i, i + chunkSize);
-            
-            res.write(`data: ${JSON.stringify({ content: subChunk })}\n\n`);
-            
-            // Random delay between 50ms and 450ms (simulating variable typing speed)
-            const typingSpeedDelay = Math.random() < 0.2 ? (Math.random() * 600 + 200) : (Math.random() * 200 + 50);
-            await new Promise(resolve => setTimeout(resolve, typingSpeedDelay));
-            
-            i += chunkSize;
-          }
+        // 4. Start "typing" indicator
+        res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
 
-          // If the delta contains sentence-ending punctuation, add a "thinking/correcting" pause
-          if (/[.!?]/.test(delta)) {
-            const sentencePause = Math.floor(Math.random() * 1500) + 800;
-            await new Promise(resolve => setTimeout(resolve, sentencePause));
-          }
-        }
+        // 5. Get FULL response at once (no streaming)
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: chatMessages,
+          stream: false,
+        });
+
+        const fullResponse =
+          completion.choices?.[0]?.message?.content?.toString() || "";
+
+        // 6. Stop typing indicator + send full message once
+        res.write(
+          `data: ${JSON.stringify({ isTyping: false, content: fullResponse })}\n\n`,
+        );
+
+        await storage.createMessage(conversationId, "assistant", fullResponse);
+
+        // Sync assistant message to agency
+        sendToAgency(conversation.userId, fullResponse, "assistant");
+
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        res.end();
+      } catch (error) {
+        console.error("Chat error:", error);
+        if (!res.headersSent) res.status(500).send();
+        else res.end();
       }
-
-      await storage.createMessage(conversationId, "assistant", fullResponse);
-      
-      // Sync assistant message to agency
-      sendToAgency(conversation.userId, fullResponse, "assistant");
-
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
-    } catch (error) {
-      console.error("Chat error:", error);
-      if (!res.headersSent) res.status(500).send();
-      else res.end();
-    }
-  });
+    },
+  );
 
   return httpServer;
 }
