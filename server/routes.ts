@@ -55,47 +55,6 @@ export async function registerRoutes(
   app: Express,
 ): Promise<Server> {
   // User Routes
-app.post(
-  "/api/conversations/:id/messages",
-  async (req: Request, res: Response) => {
-    try {
-      const idParam = req.params.id;
-      const conversationId = parseInt(
-        Array.isArray(idParam) ? idParam[0] : idParam
-      );
-
-      if (isNaN(conversationId))
-        return res.status(400).json({ message: "Invalid conversation ID" });
-
-      const { content } = req.body;
-
-      const conversation = await storage.getConversation(conversationId);
-      if (!conversation)
-        return res.status(404).json({ message: "Conversation not found" });
-
-      await storage.createMessage(conversationId, "user", content);
-      await storage.incrementMessageCount(conversation.userId);
-
-      const out = await callAgency({
-        platform: "NinnaRayChat",
-        user_id: String(conversationId),
-        username: null,
-        text: content
-      });
-
-      await storage.createMessage(conversationId, "assistant", out.reply);
-
-      return res.json({ reply: out.reply });
-
-    } catch (error) {
-      console.error("Chat error:", error);
-      if (!res.headersSent)
-        res.status(500).send();
-      else res.end();
-    }
-  }
-);
-
   app.get(api.users.get.path, async (req, res) => {
     const userId = req.params.id;
     const id = parseInt(Array.isArray(userId) ? userId[0] : userId);
@@ -139,39 +98,20 @@ app.post(
   app.post(
     "/api/conversations/:id/messages",
     async (req: Request, res: Response) => {
-  
-
-              if (isNaN(conversationId))
-                return res.status(400).json({ message: "Invalid conversation ID" });
-
-              const { content } = req.body;
-
-              const conversation = await storage.getConversation(conversationId);
-              if (!conversation)
-                return res.status(404).json({ message: "Conversation not found" });
-
-              await storage.createMessage(conversationId, "user", content);
-              await storage.incrementMessageCount(conversation.userId);
-
-              const out = await callAgency({
-                platform: "NinnaRayChat",
-                user_id: String(conversationId),
-                username: null,
-                text: content
-              });
-
-              await storage.createMessage(conversationId, "assistant", out.reply);
-
-              return res.json({ reply: out.reply });
-
-            } catch (error) {
-              console.error("Chat error:", error);
-              if (!res.headersSent)
-                res.status(500).send();
-              else res.end();
-            }
-          }
+      try {
+        const idParam = req.params.id;
+        const conversationId = parseInt(
+          Array.isArray(idParam) ? idParam[0] : idParam,
         );
+
+        if (isNaN(conversationId))
+          return res.status(400).json({ message: "Invalid conversation ID" });
+
+        const { content } = req.body;
+
+        const conversation = await storage.getConversation(conversationId);
+        if (!conversation)
+          return res.status(404).json({ message: "Conversation not found" });
 
         await storage.createMessage(conversationId, "user", content);
         await storage.incrementMessageCount(conversation.userId);
@@ -229,9 +169,6 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
         // 4. Start "typing" indicator
         res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
 
-        // 4. Start "typing" indicator
-        res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
-
         // 5. Get FULL response at once (no streaming)
         const completion = await openai.chat.completions.create({
           model: "gpt-4o",
@@ -249,16 +186,14 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
 
         await storage.createMessage(conversationId, "assistant", fullResponse);
 
-        const out = await callAgency({
-          platform: "NinnaRayChat",
-          user_id: String(conversationId),
-          username: null,
-          text: content
-        });
+        // Sync assistant message to agency
+        sendToAgency(conversation.userId, fullResponse, "assistant");
 
-        await storage.createMessage(conversationId, "assistant", out.reply);
-
-        return res.json({ reply: out.reply });
+        res.end();
+      } catch (error) {
+        console.error("Chat error:", error);
+        if (!res.headersSent) res.status(500).send();
+        else res.end();
       }
     },
   );
