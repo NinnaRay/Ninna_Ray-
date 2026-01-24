@@ -3,7 +3,15 @@ import { registerRoutes } from "./routes";
 import { setupVite } from "./vite";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+async function callAgency({ platform, user_id, username, text }) {
+  const res = await fetch(process.env.AGENCY_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ platform, user_id, username, text })
+  });
 
+  return await res.json();
+}
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
