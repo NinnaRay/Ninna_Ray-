@@ -3,12 +3,29 @@ import { registerRoutes } from "./routes";
 import { setupVite } from "./vite";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-async function callAgency({ platform, user_id, username, text }) {
-  const res = await fetch(process.env.AGENCY_WEBHOOK_URL, {
+async function callAgency({ platform, user_id, username, text }: any) {
+  const url = process.env.AGENCY_WEBHOOK_URL;
+  if (!url) {
+    console.error("Missing AGENCY_WEBHOOK_URL");
+    return null;
+  }
+
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ platform, user_id, username, text })
+    body: JSON.stringify({
+      platform,
+      external_user_id: user_id,
+      username,
+      direction: "incoming",
+      content: text,
+    }),
   });
+
+  if (!res.ok) {
+    console.error("Agency log failed:", res.status, await res.text());
+    return null;
+  }
 
   return await res.json();
 }
@@ -75,10 +92,7 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  const PORT = 5000;
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    log(`serving on port ${PORT}`);
-  });
+
 })();
 const server = createServer(app);
 
