@@ -3,32 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite } from "./vite";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-async function callAgency({ platform, user_id, username, text }: any) {
-  const url = process.env.AGENCY_WEBHOOK_URL;
-  if (!url) {
-    console.error("Missing AGENCY_WEBHOOK_URL");
-    return null;
-  }
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      platform,
-      external_user_id: user_id,
-      username,
-      direction: "incoming",
-      content: text,
-    }),
-  });
-
-  if (!res.ok) {
-    console.error("Agency log failed:", res.status, await res.text());
-    return null;
-  }
-
-  return await res.json();
-}
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -92,12 +67,8 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-
+  const PORT = parseInt(process.env.PORT || "5000", 10);
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    log(`serving on port ${PORT}`);
+  });
 })();
-const server = createServer(app);
-
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
