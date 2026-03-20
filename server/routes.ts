@@ -3,13 +3,21 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import OpenAI from "openai";
 
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
+
+function getSupabase() {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return null;
+  }
+  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
 async function sendToAgency(userId: number, message: string, role: string) {
   const agencyUrl = "https://digital-agency--yp8vpb4ggy.replit.app/sync";
   const token = process.env.AGENCY_TOKEN;
@@ -55,6 +63,15 @@ export async function registerRoutes(
   app: Express,
 ): Promise<Server> {
   // User Routes
+  app.post(api.users.create.path, async (req, res) => {
+    const result = api.users.create.input.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ message: result.error.errors[0]?.message || "Invalid input" });
+    }
+    const user = await storage.createUser(result.data);
+    res.status(201).json(user);
+  });
+
   app.get(api.users.get.path, async (req, res) => {
     const userId = req.params.id;
     const id = parseInt(Array.isArray(userId) ? userId[0] : userId);
