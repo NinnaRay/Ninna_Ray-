@@ -19,6 +19,7 @@ export interface IStorage {
   getMessagesByConversation(conversationId: number): Promise<Message[]>;
   getAllMessages(): Promise<Message[]>;
   createMessage(conversationId: number, role: string, content: string): Promise<Message>;
+  updateAiProfile(userId: number, profile: Record<string, any>): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -84,6 +85,12 @@ export class DatabaseStorage implements IStorage {
 
   async getAllMessages(): Promise<Message[]> {
     return db.select().from(messages).orderBy(desc(messages.createdAt));
+  }
+
+  async updateAiProfile(userId: number, profile: Record<string, any>): Promise<void> {
+    await db.update(users)
+      .set({ aiProfile: profile, aiProfileUpdatedAt: new Date() })
+      .where(eq(users.id, userId));
   }
 
   async createMessage(conversationId: number, role: string, content: string): Promise<Message> {

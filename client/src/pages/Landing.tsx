@@ -119,6 +119,10 @@ export default function Landing() {
               <a href="/admin" className="text-[10px] text-neutral-700 hover:text-neutral-500 transition-colors uppercase tracking-widest">
                 Owner Dashboard
               </a>
+              <span className="text-neutral-800 text-[10px]">·</span>
+              <a href="/manager" className="text-[10px] text-neutral-700 hover:text-neutral-500 transition-colors uppercase tracking-widest">
+                AI Manager
+              </a>
             </div>
           </CardContent>
         </Card>

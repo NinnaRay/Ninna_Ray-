@@ -8,6 +8,8 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   isPremium: boolean("is_premium").default(false),
   messageCount: integer("message_count").default(0).notNull(),
+  aiProfile: jsonb("ai_profile"),
+  aiProfileUpdatedAt: timestamp("ai_profile_updated_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
