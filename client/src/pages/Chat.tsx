@@ -93,6 +93,7 @@ export default function Chat() {
               role={msg.role} 
               content={msg.content} 
               isTyping={msg.isTyping} 
+              isSeen={msg.isSeen}
             />
           ))}
         </AnimatePresence>
