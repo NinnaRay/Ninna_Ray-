@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
 import { registerRoutes } from "./routes";
 import { setupVite } from "./vite";
 import { serveStatic } from "./static";
@@ -53,8 +54,21 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  await setupAuth(app);
-  registerAuthRoutes(app);
+  try {
+    await setupAuth(app);
+    registerAuthRoutes(app);
+    log("Replit Auth initialized");
+  } catch (err) {
+    log("Replit Auth failed, using fallback session");
+    app.use(
+      session({
+        secret: process.env.SESSION_SECRET || "ninna-secret-2025",
+        resave: false,
+        saveUninitialized: false,
+        cookie: { secure: false, maxAge: 1000 * 60 * 60 * 24 },
+      })
+    );
+  }
 
   const httpServer = createServer(app);
   await registerRoutes(httpServer, app);
