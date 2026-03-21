@@ -4,7 +4,6 @@ import { registerRoutes } from "./routes";
 import { setupVite } from "./vite";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 
 declare module "express-session" {
   interface SessionData {
@@ -16,6 +15,18 @@ declare module "express-session" {
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "ninna-secret-2025",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false,
+      maxAge: 1000 * 60 * 60 * 24,
+    },
+  })
+);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -54,22 +65,6 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  try {
-    await setupAuth(app);
-    registerAuthRoutes(app);
-    log("Replit Auth initialized");
-  } catch (err) {
-    log("Replit Auth failed, using fallback session");
-    app.use(
-      session({
-        secret: process.env.SESSION_SECRET || "ninna-secret-2025",
-        resave: false,
-        saveUninitialized: false,
-        cookie: { secure: false, maxAge: 1000 * 60 * 60 * 24 },
-      })
-    );
-  }
-
   const httpServer = createServer(app);
   await registerRoutes(httpServer, app);
 
