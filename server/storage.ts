@@ -8,13 +8,14 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   incrementMessageCount(userId: number): Promise<void>;
   getAllUsers(): Promise<User[]>;
-  
+
   // Chat operations
   getConversation(id: number): Promise<Conversation | undefined>;
   getConversationsByUser(userId: number): Promise<Conversation[]>;
   getAllConversations(): Promise<Conversation[]>;
   createConversation(userId: number, title: string): Promise<Conversation>;
   deleteConversation(id: number): Promise<void>;
+  setManualMode(conversationId: number, manual: boolean, agentName?: string): Promise<void>;
   getMessagesByConversation(conversationId: number): Promise<Message[]>;
   getAllMessages(): Promise<Message[]>;
   createMessage(conversationId: number, role: string, content: string): Promise<Message>;
@@ -67,6 +68,12 @@ export class DatabaseStorage implements IStorage {
   async deleteConversation(id: number): Promise<void> {
     await db.delete(messages).where(eq(messages.conversationId, id));
     await db.delete(conversations).where(eq(conversations.id, id));
+  }
+
+  async setManualMode(conversationId: number, manual: boolean, agentName?: string): Promise<void> {
+    await db.update(conversations)
+      .set({ manualMode: manual, assignedAgent: agentName ?? null })
+      .where(eq(conversations.id, conversationId));
   }
 
   async getMessagesByConversation(conversationId: number): Promise<Message[]> {

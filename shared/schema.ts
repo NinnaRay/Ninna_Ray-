@@ -16,6 +16,8 @@ export const conversations = pgTable("conversations", {
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   gameState: jsonb("game_state").default({}),
+  manualMode: boolean("manual_mode").default(false).notNull(),
+  assignedAgent: text("assigned_agent"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
