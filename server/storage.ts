@@ -7,13 +7,16 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   incrementMessageCount(userId: number): Promise<void>;
+  getAllUsers(): Promise<User[]>;
   
   // Chat operations
   getConversation(id: number): Promise<Conversation | undefined>;
   getConversationsByUser(userId: number): Promise<Conversation[]>;
+  getAllConversations(): Promise<Conversation[]>;
   createConversation(userId: number, title: string): Promise<Conversation>;
   deleteConversation(id: number): Promise<void>;
   getMessagesByConversation(conversationId: number): Promise<Message[]>;
+  getAllMessages(): Promise<Message[]>;
   createMessage(conversationId: number, role: string, content: string): Promise<Message>;
 }
 
@@ -26,6 +29,10 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
   }
 
   async incrementMessageCount(userId: number): Promise<void> {
@@ -48,6 +55,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(conversations.createdAt));
   }
 
+  async getAllConversations(): Promise<Conversation[]> {
+    return db.select().from(conversations).orderBy(desc(conversations.createdAt));
+  }
+
   async createConversation(userId: number, title: string): Promise<Conversation> {
     const [conversation] = await db.insert(conversations).values({ userId, title }).returning();
     return conversation;
@@ -62,6 +73,10 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(messages)
       .where(eq(messages.conversationId, conversationId))
       .orderBy(messages.createdAt);
+  }
+
+  async getAllMessages(): Promise<Message[]> {
+    return db.select().from(messages).orderBy(desc(messages.createdAt));
   }
 
   async createMessage(conversationId: number, role: string, content: string): Promise<Message> {

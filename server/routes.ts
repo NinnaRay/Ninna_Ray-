@@ -215,5 +215,109 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako ka
     },
   );
 
+  // ─── Agency Dashboard Routes ─────────────────────────────────────────────
+
+  // GET /api/agency/stats  – celkové statistiky
+  app.get("/api/agency/stats", async (_req, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      const allConversations = await storage.getAllConversations();
+      const allMessages = await storage.getAllMessages();
+
+      const totalUsers = allUsers.length;
+      const totalConversations = allConversations.length;
+      const totalMessages = allMessages.length;
+      const avgMessagesPerUser = totalUsers > 0 ? Math.round(totalMessages / totalUsers) : 0;
+
+      // Active last 24h (conversations with message in last 24h)
+      const now = Date.now();
+      const activeConvIds = new Set(
+        allMessages
+          .filter(m => now - new Date(m.createdAt).getTime() < 86400000)
+          .map(m => m.conversationId)
+      );
+
+      res.json({
+        totalUsers,
+        totalConversations,
+        totalMessages,
+        avgMessagesPerUser,
+        activeConversations24h: activeConvIds.size,
+      });
+    } catch (err) {
+      console.error("Agency stats error:", err);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // GET /api/agency/conversations  – všechny konverzace s posledními zprávami
+  app.get("/api/agency/conversations", async (_req, res) => {
+    try {
+      const allConversations = await storage.getAllConversations();
+      const allUsers = await storage.getAllUsers();
+      const userMap = Object.fromEntries(allUsers.map(u => [u.id, u]));
+
+      const result = await Promise.all(
+        allConversations.map(async (conv) => {
+          const messages = await storage.getMessagesByConversation(conv.id);
+          const lastMessage = messages[messages.length - 1] || null;
+          return {
+            ...conv,
+            user: userMap[conv.userId] || null,
+            messageCount: messages.length,
+            lastMessage,
+          };
+        })
+      );
+
+      // Sort by last activity
+      result.sort((a, b) => {
+        const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
+        const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
+        return bTime - aTime;
+      });
+
+      res.json(result);
+    } catch (err) {
+      console.error("Agency conversations error:", err);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // GET /api/agency/conversations/:id/messages  – všechny zprávy konverzace
+  app.get("/api/agency/conversations/:id/messages", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const messages = await storage.getMessagesByConversation(id);
+      res.json(messages);
+    } catch (err) {
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // POST /api/agency/conversations/:id/manual-reply  – ruční odpověď agenta
+  app.post("/api/agency/conversations/:id/manual-reply", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const { content } = req.body;
+      if (!content?.trim()) return res.status(400).json({ message: "content required" });
+
+      const conversation = await storage.getConversation(id);
+      if (!conversation) return res.status(404).json({ message: "Conversation not found" });
+
+      const message = await storage.createMessage(id, "assistant", content.trim());
+
+      // Sync to agency
+      sendToAgency(conversation.userId, content.trim(), "assistant");
+
+      res.status(201).json(message);
+    } catch (err) {
+      console.error("Manual reply error:", err);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
   return httpServer;
 }
