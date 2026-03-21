@@ -5,7 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Landing from "@/pages/Landing";
 import Chat from "@/pages/Chat";
-import Agency from "@/pages/Agency";
+import AgentDashboard from "@/pages/AgentDashboard";
+import AdminDashboard from "@/pages/AdminDashboard";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -13,7 +14,8 @@ function Router() {
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/chat" component={Chat} />
-      <Route path="/agency" component={Agency} />
+      <Route path="/agent" component={AgentDashboard} />
+      <Route path="/admin" component={AdminDashboard} />
       <Route component={NotFound} />
     </Switch>
   );

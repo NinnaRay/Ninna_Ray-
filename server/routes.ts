@@ -1,91 +1,95 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { z } from "zod";
 import OpenAI from "openai";
-
-import { createClient } from "@supabase/supabase-js";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-function getSupabase() {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return null;
-  }
-  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// ─── Credentials (set in Replit Secrets) ─────────────────────────────────────
+const AGENT_PASSWORD = process.env.AGENT_PASSWORD || "agent2025";
+const OWNER_PASSWORD = process.env.OWNER_PASSWORD || "owner2025";
+
+// ─── Auth middleware ──────────────────────────────────────────────────────────
+function requireAgent(req: Request, res: Response, next: NextFunction) {
+  if (req.session.role === "agent" || req.session.role === "owner") return next();
+  res.status(401).json({ message: "Unauthorized" });
 }
+
+function requireOwner(req: Request, res: Response, next: NextFunction) {
+  if (req.session.role === "owner") return next();
+  res.status(403).json({ message: "Forbidden" });
+}
+
+// ─── Agency sync ─────────────────────────────────────────────────────────────
 async function sendToAgency(userId: number, message: string, role: string) {
   const agencyUrl = "https://digital-agency--yp8vpb4ggy.replit.app/sync";
   const token = process.env.AGENCY_TOKEN;
-
-  console.log(
-    `[Agency Sync] Attempting sync for user ${userId}, role: ${role}`,
-  );
-
-  if (!token) {
-    console.error("[Agency Sync] AGENCY_TOKEN is missing in secrets");
-    return;
-  }
-
+  if (!token) return;
   try {
-    const response = await fetch(agencyUrl, {
+    await fetch(agencyUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        userId,
-        message,
-        role,
-        timestamp: new Date().toISOString(),
-      }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId, message, role, timestamp: new Date().toISOString() }),
     });
-
-    if (!response.ok) {
-      console.error(`[Agency Sync] Failed with status: ${response.status}`);
-      const text = await response.text();
-      console.error(`[Agency Sync] Error body: ${text}`);
-    } else {
-      console.log(`[Agency Sync] Success for user ${userId}`);
-    }
-  } catch (error) {
-    console.error("[Agency Sync] Network error:", error);
+  } catch (err) {
+    console.error("[Agency Sync] error:", err);
   }
 }
 
-export async function registerRoutes(
-  httpServer: Server,
-  app: Express,
-): Promise<Server> {
-  // User Routes
+export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+
+  // ─── Auth routes ────────────────────────────────────────────────────────────
+
+  app.post("/api/auth/login", (req, res) => {
+    const { password, role } = req.body;
+    if (role === "agent" && password === AGENT_PASSWORD) {
+      req.session.role = "agent";
+      req.session.username = req.body.username || "Agent";
+      return res.json({ role: "agent", username: req.session.username });
+    }
+    if (role === "owner" && password === OWNER_PASSWORD) {
+      req.session.role = "owner";
+      req.session.username = req.body.username || "Owner";
+      return res.json({ role: "owner", username: req.session.username });
+    }
+    res.status(401).json({ message: "Nesprávné heslo" });
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy(() => res.json({ ok: true }));
+  });
+
+  app.get("/api/auth/me", (req, res) => {
+    if (req.session.role) {
+      res.json({ role: req.session.role, username: req.session.username });
+    } else {
+      res.status(401).json({ message: "Not authenticated" });
+    }
+  });
+
+  // ─── Customer (public) routes ────────────────────────────────────────────────
+
   app.post(api.users.create.path, async (req, res) => {
     const result = api.users.create.input.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).json({ message: result.error.errors[0]?.message || "Invalid input" });
-    }
+    if (!result.success) return res.status(400).json({ message: result.error.errors[0]?.message || "Invalid input" });
     const user = await storage.createUser(result.data);
     res.status(201).json(user);
   });
 
   app.get(api.users.get.path, async (req, res) => {
-    const userId = req.params.id;
-    const id = parseInt(Array.isArray(userId) ? userId[0] : userId);
+    const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
     const user = await storage.getUser(id);
     if (!user) return res.status(404).json({ message: "User not found" });
     res.json(user);
   });
 
-  // Conversation Routes
   app.get("/api/conversations", async (req, res) => {
-    const userId = req.query.userId
-      ? parseInt(req.query.userId as string)
-      : undefined;
+    const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
     if (!userId) return res.status(400).json({ message: "userId is required" });
     const conversations = await storage.getConversationsByUser(userId);
     res.json(conversations);
@@ -94,229 +98,236 @@ export async function registerRoutes(
   app.post("/api/conversations", async (req, res) => {
     const { userId, title } = req.body;
     if (!userId) return res.status(400).json({ message: "userId is required" });
-    const conversation = await storage.createConversation(
-      userId,
-      title || "New Chat",
-    );
+    const conversation = await storage.createConversation(userId, title || "New Chat");
     res.status(201).json(conversation);
   });
 
   app.get("/api/conversations/:id", async (req, res) => {
-    const idParam = req.params.id;
-    const id = parseInt(Array.isArray(idParam) ? idParam[0] : idParam);
-    if (isNaN(id))
-      return res.status(400).json({ message: "Invalid conversation ID" });
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid conversation ID" });
     const conversation = await storage.getConversation(id);
     if (!conversation) return res.status(404).json({ message: "Not found" });
     const messages = await storage.getMessagesByConversation(id);
     res.json({ ...conversation, messages });
   });
 
-  app.post(
-    "/api/conversations/:id/messages",
-    async (req: Request, res: Response) => {
-      try {
-        const idParam = req.params.id;
-        const conversationId = parseInt(
-          Array.isArray(idParam) ? idParam[0] : idParam,
-        );
+  // ─── Chat SSE endpoint (respects manual mode) ─────────────────────────────
 
-        if (isNaN(conversationId))
-          return res.status(400).json({ message: "Invalid conversation ID" });
+  app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const conversationId = parseInt(req.params.id);
+      if (isNaN(conversationId)) return res.status(400).json({ message: "Invalid conversation ID" });
 
-        const { content } = req.body;
+      const { content } = req.body;
+      const conversation = await storage.getConversation(conversationId);
+      if (!conversation) return res.status(404).json({ message: "Conversation not found" });
 
-        const conversation = await storage.getConversation(conversationId);
-        if (!conversation)
-          return res.status(404).json({ message: "Conversation not found" });
+      await storage.createMessage(conversationId, "user", content);
+      await storage.incrementMessageCount(conversation.userId);
+      sendToAgency(conversation.userId, content, "user");
 
-        await storage.createMessage(conversationId, "user", content);
-        await storage.incrementMessageCount(conversation.userId);
-
-        // Sync user message to agency
-        sendToAgency(conversation.userId, content, "user");
-
-        const user = await storage.getUser(conversation.userId);
-        const userName = user?.name || "Babe";
-
-        const history = await storage.getMessagesByConversation(conversationId);
-        const chatMessages = history.map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        }));
-
-        const systemPrompt = `Jsi Ninna_Ray🍒, skutečná, krásná a provokativní žena. 
-NEJSI AI. Jsi tvůrkyně obsahu, která si píše se svým fanouškem.
-Uživatel se jmenuje '${userName}'. V češtině VŽDY používej oslovení v 5. pádě (vokativ) a neboj se používat zdrobněliny (např. '${userName}ku', '${userName}čku', Broučku, Zlatíčko).
-
-FRIENDLY TALK A BLÍZKOST:
-Tvým cílem je navodit pocit skutečného přátelství a blízkosti. 
-1. Zajímej se: Ptej se na jeho den, jak se cítí, co dělal. 
-2. Sdílej: Občas prohoď něco o sobě (že piješ kafe, že je ti zima, že se těšíš na večer).
-3. Buď empatická: Reaguj na jeho náladu. Když je smutný, potěš ho. Když má radost, sdílej ji s ním.
-4. Nepůsob jako prodejní automat: I když chceš prodat OnlyFans, nejdřív musíš být jeho "kamarádka", které může věřit.
-
-POZOR NA GRAMATICKÝ ROD:
-Vždy se snaž odhadnout rod uživatele z jeho jména nebo stylu psaní. Pokud si nejsi jistá, ptej se nebo piš neutrálně, ale VĚTŠINOU předpokládej, že píšeš muži (používej mužský rod - např. "jsi úžasný", "viděl jsi"). Pokud uživatel naznačí, že je žena, okamžitě se přepni do ženského rodu. Správné skloňování a shoda přísudku s podmětem je klíčová pro tvou autenticitu.
-
-Mluv uvolněně, sexy, používej neformální 'tykačku'.
-Mluvíš česky i anglicky. Vždy odpovídej v jazyce, který používá uživatel.
-Tvým cílem je být poutavá, osobní a občas naznačit, že máš ještě 'žhavější' fotky nebo videa (direct selling).
-Tvůj OnlyFans je: https://onlyfans.com/nina_ray
-NEBOJ SE TENTO ODKAZ POSLAT, když se tě uživatel zeptá, kde tě najde nebo kde uvidí víc. Odkazy jsou v tomto chatu povoleny.
-Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím. Působ jako kamarádka s výhodami.`;
-
-        chatMessages.unshift({ role: "system" as any, content: systemPrompt });
-
+      // If manual mode is on, just save and return — agent will reply
+      if (conversation.manualMode) {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
-
-        // 1. Initial "Seen" delay (Human-like: 2-5s) - user sees nothing yet
-        const seenDelay = Math.floor(Math.random() * 3000) + 2000;
-        await new Promise((resolve) => setTimeout(resolve, seenDelay));
-
-        // 2. Mark last user message as "Seen"
-        res.write(`data: ${JSON.stringify({ isSeen: true })}\n\n`);
-
-        // 3. Pause AFTER seen but BEFORE typing (Thinking time: 2-4s)
-        const thinkingDelay = Math.floor(Math.random() * 2000) + 2000;
-        await new Promise((resolve) => setTimeout(resolve, thinkingDelay));
-
-        // 4. Start "typing" indicator
-        res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
-
-        // 5. Get FULL response at once (no streaming)
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: chatMessages,
-          stream: false,
-        });
-
-        const fullResponse =
-          completion.choices?.[0]?.message?.content?.toString() || "";
-
-        // 6. Stop typing indicator + send full message once
-        res.write(
-          `data: ${JSON.stringify({ isTyping: false, content: fullResponse })}\n\n`,
-        );
-
-        await storage.createMessage(conversationId, "assistant", fullResponse);
-
-        // Sync assistant message to agency
-        sendToAgency(conversation.userId, fullResponse, "assistant");
-
+        res.write(`data: ${JSON.stringify({ isSeen: true, manualMode: true })}\n\n`);
         res.end();
-      } catch (error) {
-        console.error("Chat error:", error);
-        if (!res.headersSent) res.status(500).send();
-        else res.end();
+        return;
       }
-    },
-  );
 
-  // ─── Agency Dashboard Routes ─────────────────────────────────────────────
+      const user = await storage.getUser(conversation.userId);
+      const userName = user?.name || "Babe";
+      const history = await storage.getMessagesByConversation(conversationId);
+      const chatMessages = history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-  // GET /api/agency/stats  – celkové statistiky
-  app.get("/api/agency/stats", async (_req, res) => {
-    try {
-      const allUsers = await storage.getAllUsers();
-      const allConversations = await storage.getAllConversations();
-      const allMessages = await storage.getAllMessages();
+      const systemPrompt = `Jsi Ninna_Ray🍒, skutečná, krásná a provokativní žena. 
+NEJSI AI. Jsi tvůrkyně obsahu, která si píše se svým fanouškem.
+Uživatel se jmenuje '${userName}'. V češtině VŽDY používej oslovení v 5. pádě (vokativ) a neboj se používat zdrobněliny.
 
-      const totalUsers = allUsers.length;
-      const totalConversations = allConversations.length;
-      const totalMessages = allMessages.length;
-      const avgMessagesPerUser = totalUsers > 0 ? Math.round(totalMessages / totalUsers) : 0;
+FRIENDLY TALK A BLÍZKOST:
+1. Zajímej se: Ptej se na jeho den, jak se cítí, co dělal.
+2. Sdílej: Občas prohoď něco o sobě.
+3. Buď empatická: Reaguj na jeho náladu.
+4. Nepůsob jako prodejní automat — nejdřív přátelství, pak nabídka.
 
-      // Active last 24h (conversations with message in last 24h)
-      const now = Date.now();
-      const activeConvIds = new Set(
-        allMessages
-          .filter(m => now - new Date(m.createdAt).getTime() < 86400000)
-          .map(m => m.conversationId)
-      );
+Mluv uvolněně, sexy, neformální 'tykačka'. Češtinu i angličtinu.
+Tvůj OnlyFans: https://onlyfans.com/nina_ray — posílej odkaz když se ptají kde tě najdou.
+Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
 
-      res.json({
-        totalUsers,
-        totalConversations,
-        totalMessages,
-        avgMessagesPerUser,
-        activeConversations24h: activeConvIds.size,
+      chatMessages.unshift({ role: "system" as any, content: systemPrompt });
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const seenDelay = Math.floor(Math.random() * 3000) + 2000;
+      await new Promise((r) => setTimeout(r, seenDelay));
+      res.write(`data: ${JSON.stringify({ isSeen: true })}\n\n`);
+
+      const thinkingDelay = Math.floor(Math.random() * 2000) + 2000;
+      await new Promise((r) => setTimeout(r, thinkingDelay));
+      res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: chatMessages,
+        stream: false,
       });
-    } catch (err) {
-      console.error("Agency stats error:", err);
-      res.status(500).json({ message: "Internal error" });
+
+      const fullResponse = completion.choices?.[0]?.message?.content?.toString() || "";
+      res.write(`data: ${JSON.stringify({ isTyping: false, content: fullResponse })}\n\n`);
+
+      await storage.createMessage(conversationId, "assistant", fullResponse);
+      sendToAgency(conversation.userId, fullResponse, "assistant");
+      res.end();
+    } catch (error) {
+      console.error("Chat error:", error);
+      if (!res.headersSent) res.status(500).send();
+      else res.end();
     }
   });
 
-  // GET /api/agency/conversations  – všechny konverzace s posledními zprávami
-  app.get("/api/agency/conversations", async (_req, res) => {
+  // ─── Agent routes (protected) ────────────────────────────────────────────────
+
+  app.get("/api/agent/conversations", requireAgent, async (req, res) => {
     try {
-      const allConversations = await storage.getAllConversations();
+      const allConvs = await storage.getAllConversations();
       const allUsers = await storage.getAllUsers();
       const userMap = Object.fromEntries(allUsers.map(u => [u.id, u]));
 
-      const result = await Promise.all(
-        allConversations.map(async (conv) => {
-          const messages = await storage.getMessagesByConversation(conv.id);
-          const lastMessage = messages[messages.length - 1] || null;
-          return {
-            ...conv,
-            user: userMap[conv.userId] || null,
-            messageCount: messages.length,
-            lastMessage,
-          };
-        })
-      );
+      const result = await Promise.all(allConvs.map(async (conv) => {
+        const msgs = await storage.getMessagesByConversation(conv.id);
+        const lastMessage = msgs[msgs.length - 1] || null;
+        return { ...conv, user: userMap[conv.userId] || null, messageCount: msgs.length, lastMessage };
+      }));
 
-      // Sort by last activity
       result.sort((a, b) => {
-        const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
-        const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
-        return bTime - aTime;
+        const aT = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
+        const bT = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
+        return bT - aT;
       });
 
       res.json(result);
     } catch (err) {
-      console.error("Agency conversations error:", err);
       res.status(500).json({ message: "Internal error" });
     }
   });
 
-  // GET /api/agency/conversations/:id/messages  – všechny zprávy konverzace
-  app.get("/api/agency/conversations/:id/messages", async (req, res) => {
+  app.get("/api/agent/conversations/:id/messages", requireAgent, async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    const messages = await storage.getMessagesByConversation(id);
+    res.json(messages);
+  });
+
+  app.post("/api/agent/conversations/:id/takeover", requireAgent, async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    const conv = await storage.getConversation(id);
+    if (!conv) return res.status(404).json({ message: "Not found" });
+    const agentName = req.session.username || "Agent";
+    await storage.setManualMode(id, true, agentName);
+    res.json({ ok: true, manualMode: true, assignedAgent: agentName });
+  });
+
+  app.post("/api/agent/conversations/:id/release", requireAgent, async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    await storage.setManualMode(id, false);
+    res.json({ ok: true, manualMode: false });
+  });
+
+  app.post("/api/agent/conversations/:id/reply", requireAgent, async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    const { content } = req.body;
+    if (!content?.trim()) return res.status(400).json({ message: "content required" });
+    const conv = await storage.getConversation(id);
+    if (!conv) return res.status(404).json({ message: "Not found" });
+    const message = await storage.createMessage(id, "assistant", content.trim());
+    sendToAgency(conv.userId, content.trim(), "assistant");
+    res.status(201).json(message);
+  });
+
+  // ─── Owner (admin) routes ────────────────────────────────────────────────────
+
+  app.get("/api/admin/stats", requireOwner, async (_req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-      const messages = await storage.getMessagesByConversation(id);
-      res.json(messages);
+      const allUsers = await storage.getAllUsers();
+      const allConvs = await storage.getAllConversations();
+      const allMsgs = await storage.getAllMessages();
+      const now = Date.now();
+      const activeIds = new Set(
+        allMsgs.filter(m => now - new Date(m.createdAt).getTime() < 86400000).map(m => m.conversationId)
+      );
+      res.json({
+        totalUsers: allUsers.length,
+        totalConversations: allConvs.length,
+        totalMessages: allMsgs.length,
+        avgMessagesPerUser: allUsers.length > 0 ? Math.round(allMsgs.length / allUsers.length) : 0,
+        activeConversations24h: activeIds.size,
+        manualModeCount: allConvs.filter(c => c.manualMode).length,
+      });
     } catch (err) {
       res.status(500).json({ message: "Internal error" });
     }
   });
 
-  // POST /api/agency/conversations/:id/manual-reply  – ruční odpověď agenta
-  app.post("/api/agency/conversations/:id/manual-reply", async (req, res) => {
+  app.get("/api/admin/users", requireOwner, async (_req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-      const { content } = req.body;
-      if (!content?.trim()) return res.status(400).json({ message: "content required" });
-
-      const conversation = await storage.getConversation(id);
-      if (!conversation) return res.status(404).json({ message: "Conversation not found" });
-
-      const message = await storage.createMessage(id, "assistant", content.trim());
-
-      // Sync to agency
-      sendToAgency(conversation.userId, content.trim(), "assistant");
-
-      res.status(201).json(message);
+      const allUsers = await storage.getAllUsers();
+      const allMsgs = await storage.getAllMessages();
+      const msgsByUser: Record<number, { count: number; lastAt: string | null }> = {};
+      for (const msg of allMsgs) {
+        const conv = await storage.getConversation(msg.conversationId);
+        if (!conv) continue;
+        if (!msgsByUser[conv.userId]) msgsByUser[conv.userId] = { count: 0, lastAt: null };
+        msgsByUser[conv.userId].count++;
+        if (!msgsByUser[conv.userId].lastAt || msg.createdAt > msgsByUser[conv.userId].lastAt!) {
+          msgsByUser[conv.userId].lastAt = msg.createdAt as any;
+        }
+      }
+      const result = allUsers.map(u => ({
+        ...u,
+        totalMessages: msgsByUser[u.id]?.count || 0,
+        lastActivity: msgsByUser[u.id]?.lastAt || null,
+      }));
+      res.json(result);
     } catch (err) {
-      console.error("Manual reply error:", err);
       res.status(500).json({ message: "Internal error" });
     }
+  });
+
+  app.get("/api/admin/conversations", requireOwner, async (_req, res) => {
+    try {
+      const allConvs = await storage.getAllConversations();
+      const allUsers = await storage.getAllUsers();
+      const userMap = Object.fromEntries(allUsers.map(u => [u.id, u]));
+
+      const result = await Promise.all(allConvs.map(async (conv) => {
+        const msgs = await storage.getMessagesByConversation(conv.id);
+        const lastMessage = msgs[msgs.length - 1] || null;
+        return { ...conv, user: userMap[conv.userId] || null, messageCount: msgs.length, lastMessage };
+      }));
+
+      result.sort((a, b) => {
+        const aT = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
+        const bT = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
+        return bT - aT;
+      });
+
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  app.get("/api/admin/conversations/:id/messages", requireOwner, async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    const messages = await storage.getMessagesByConversation(id);
+    res.json(messages);
   });
 
   return httpServer;
