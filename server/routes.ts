@@ -73,9 +73,30 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // ─── Customer (public) routes ────────────────────────────────────────────────
 
+  app.post("/api/customers/init", async (req: any, res) => {
+    try {
+      const authUser = req.user;
+      if (!authUser || !authUser.claims) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const claims = authUser.claims;
+      const displayName = claims.first_name || claims.email?.split("@")[0] || "Fan";
+
+      const allUsers = await storage.getAllUsers();
+      let customer = allUsers.find((u: any) => u.name === `auth:${claims.sub}`);
+      if (!customer) {
+        customer = await storage.createUser({ name: displayName });
+      }
+      res.json(customer);
+    } catch (err) {
+      console.error("Customer init error:", err);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
   app.post(api.users.create.path, async (req, res) => {
     const result = api.users.create.input.safeParse(req.body);
-    if (!result.success) return res.status(400).json({ message: result.error.errors[0]?.message || "Invalid input" });
+    if (!result.success) return res.status(400).json({ message: "Invalid input" });
     const user = await storage.createUser(result.data);
     res.status(201).json(user);
   });
