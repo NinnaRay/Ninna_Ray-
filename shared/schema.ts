@@ -1,4 +1,4 @@
-import { pgTable, text, serial, boolean, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, boolean, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -8,6 +8,8 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   isPremium: boolean("is_premium").default(false),
   messageCount: integer("message_count").default(0).notNull(),
+  aiProfile: jsonb("ai_profile"),
+  aiProfileUpdatedAt: timestamp("ai_profile_updated_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -15,13 +17,16 @@ export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
+  gameState: jsonb("game_state").default({}),
+  manualMode: boolean("manual_mode").default(false).notNull(),
+  assignedAgent: text("assigned_agent"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
   conversationId: integer("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
-  role: text("role").notNull(), // 'user', 'assistant', 'system'
+  role: text("role").notNull(),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
