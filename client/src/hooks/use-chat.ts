@@ -6,7 +6,6 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   isTyping?: boolean;
-  isSeen?: boolean;
 }
 
 interface UseChatProps {
@@ -76,8 +75,7 @@ export function useChat({ userId }: UseChatProps) {
     // Optimistic UI update
     const tempId = Date.now().toString();
     setMessages(prev => [...prev, { id: tempId, role: "user", content }]);
-    // We don't set setIsTyping(true) immediately here anymore
-    // It will be set after the random initial delay from the server
+    setIsTyping(true);
 
     try {
       const res = await fetch(`/api/conversations/${conversationIdRef.current}/messages`, {
@@ -94,48 +92,25 @@ export function useChat({ userId }: UseChatProps) {
 
       const decoder = new TextDecoder();
       let aiResponseText = "";
-      let hasStartedTyping = false;
       
       // Add placeholder for AI message
       const aiMsgId = (Date.now() + 1).toString();
-      
+      setMessages(prev => [...prev, { id: aiMsgId, role: "assistant", content: "", isTyping: true }]);
+      setIsTyping(false); // We are now streaming, so generic "typing" indicator off, text streaming on
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value);
-              const lines = chunk.split("\n\n");
+        const lines = chunk.split("\n\n");
+        
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
               
-              for (const line of lines) {
-                if (line.trim().startsWith("data: ")) {
-                  try {
-                    const dataStr = line.trim().slice(6);
-                    if (!dataStr) continue;
-                    const data = JSON.parse(dataStr);
-              
-              if (data.isSeen) {
-                setMessages(prev => {
-                  const lastUserMsgIndex = [...prev].reverse().findIndex(m => m.role === "user");
-                  if (lastUserMsgIndex !== -1) {
-                    const actualIndex = prev.length - 1 - lastUserMsgIndex;
-                    return prev.map((msg, i) => i === actualIndex ? { ...msg, isSeen: true } : msg);
-                  }
-                  return prev;
-                });
-                continue;
-              }
-
-              if (data.isTyping) {
-                setIsTyping(true);
-                continue;
-              }
-
               if (data.content) {
-                if (!hasStartedTyping) {
-                  setMessages(prev => [...prev, { id: aiMsgId, role: "assistant", content: "", isTyping: true }]);
-                  setIsTyping(false);
-                  hasStartedTyping = true;
-                }
                 aiResponseText += data.content;
                 setMessages(prev => prev.map(msg => 
                   msg.id === aiMsgId 

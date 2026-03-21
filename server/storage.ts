@@ -1,25 +1,24 @@
-import { users, conversations, messages, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage } from "@shared/schema";
+import { users, conversations, messages, type User, type InsertUser, type Conversation, type Message } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
-  // User operations
   getUser(id: number): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   incrementMessageCount(userId: number): Promise<void>;
-  getAllUsers(): Promise<User[]>;
+  updateAiProfile(userId: number, profile: Record<string, any>): Promise<void>;
 
-  // Chat operations
   getConversation(id: number): Promise<Conversation | undefined>;
   getConversationsByUser(userId: number): Promise<Conversation[]>;
   getAllConversations(): Promise<Conversation[]>;
   createConversation(userId: number, title: string): Promise<Conversation>;
   deleteConversation(id: number): Promise<void>;
   setManualMode(conversationId: number, manual: boolean, agentName?: string): Promise<void>;
+
   getMessagesByConversation(conversationId: number): Promise<Message[]>;
   getAllMessages(): Promise<Message[]>;
   createMessage(conversationId: number, role: string, content: string): Promise<Message>;
-  updateAiProfile(userId: number, profile: Record<string, any>): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -28,13 +27,13 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
-  }
-
-  async getAllUsers(): Promise<User[]> {
-    return db.select().from(users).orderBy(desc(users.createdAt));
   }
 
   async incrementMessageCount(userId: number): Promise<void> {
@@ -44,6 +43,12 @@ export class DatabaseStorage implements IStorage {
         .set({ messageCount: user.messageCount + 1 })
         .where(eq(users.id, userId));
     }
+  }
+
+  async updateAiProfile(userId: number, profile: Record<string, any>): Promise<void> {
+    await db.update(users)
+      .set({ aiProfile: profile, aiProfileUpdatedAt: new Date() })
+      .where(eq(users.id, userId));
   }
 
   async getConversation(id: number): Promise<Conversation | undefined> {
@@ -73,7 +78,7 @@ export class DatabaseStorage implements IStorage {
 
   async setManualMode(conversationId: number, manual: boolean, agentName?: string): Promise<void> {
     await db.update(conversations)
-      .set({ manualMode: manual, assignedAgent: agentName ?? null })
+      .set({ manualMode: manual, assignedAgent: manual ? (agentName || null) : null })
       .where(eq(conversations.id, conversationId));
   }
 
@@ -85,12 +90,6 @@ export class DatabaseStorage implements IStorage {
 
   async getAllMessages(): Promise<Message[]> {
     return db.select().from(messages).orderBy(desc(messages.createdAt));
-  }
-
-  async updateAiProfile(userId: number, profile: Record<string, any>): Promise<void> {
-    await db.update(users)
-      .set({ aiProfile: profile, aiProfileUpdatedAt: new Date() })
-      .where(eq(users.id, userId));
   }
 
   async createMessage(conversationId: number, role: string, content: string): Promise<Message> {

@@ -110,20 +110,6 @@ export default function Landing() {
             <p className="text-center text-[10px] text-neutral-600 uppercase tracking-widest font-medium">
               {lang === "cs" ? "Vstupem potvrzuješ věk 18+" : "Must be 18+ to enter"}
             </p>
-
-            <div className="flex justify-center gap-4 pt-2">
-              <a href="/agent" className="text-[10px] text-neutral-700 hover:text-neutral-500 transition-colors uppercase tracking-widest">
-                Agent Login
-              </a>
-              <span className="text-neutral-800 text-[10px]">·</span>
-              <a href="/admin" className="text-[10px] text-neutral-700 hover:text-neutral-500 transition-colors uppercase tracking-widest">
-                Owner Dashboard
-              </a>
-              <span className="text-neutral-800 text-[10px]">·</span>
-              <a href="/manager" className="text-[10px] text-neutral-700 hover:text-neutral-500 transition-colors uppercase tracking-widest">
-                AI Manager
-              </a>
-            </div>
           </CardContent>
         </Card>
       </motion.div>
