@@ -330,5 +330,197 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
     res.json(messages);
   });
 
+  // ─── AI Manager routes (owner only) ─────────────────────────────────────────
+
+  // Analyze a single user and generate/update their AI profile
+  app.post("/api/manager/analyze/:userId", requireOwner, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      if (isNaN(userId)) return res.status(400).json({ message: "Invalid user ID" });
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const convs = await storage.getConversationsByUser(userId);
+      let allMessages: { role: string; content: string }[] = [];
+      for (const conv of convs) {
+        const msgs = await storage.getMessagesByConversation(conv.id);
+        allMessages = allMessages.concat(msgs.map(m => ({ role: m.role, content: m.content })));
+      }
+
+      if (allMessages.length === 0) {
+        const emptyProfile = {
+          status: "new",
+          statusLabel: "Nový",
+          engagementScore: 0,
+          summary: "Zákazník zatím nezaslal žádné zprávy.",
+          personality: [],
+          interests: [],
+          buyingPotential: "neznámý",
+          nextAction: "Počkej na první zprávu.",
+          suggestedMessages: [],
+          contentIdeas: [],
+          warnings: [],
+          lastAnalyzed: new Date().toISOString(),
+        };
+        await storage.updateAiProfile(userId, emptyProfile);
+        return res.json(emptyProfile);
+      }
+
+      const transcript = allMessages
+        .slice(-60)
+        .map(m => `${m.role === "user" ? user.name : "Ninna"}: ${m.content}`)
+        .join("\n");
+
+      const analysisPrompt = `Jsi expert na řízení OnlyFans agentury. Analyzuj konverzaci zákazníka se jménem "${user.name}" a vytvoř kompletní profil.
+
+KONVERZACE (posledních max 60 zpráv):
+${transcript}
+
+Vrať JSON s tímto přesným formátem (bez markdown, jen čistý JSON):
+{
+  "status": "hot|warm|cold|new",
+  "statusLabel": "Horký lead|Teplý|Studený|Nový",
+  "engagementScore": <0-100>,
+  "summary": "<2-3 věty o zákazníkovi>",
+  "personality": ["<vlastnost1>", "<vlastnost2>", "<vlastnost3>"],
+  "interests": ["<zájem1>", "<zájem2>"],
+  "buyingPotential": "vysoký|střední|nízký",
+  "nextAction": "<konkrétní doporučení co teď udělat>",
+  "suggestedMessages": [
+    "<hotová zpráva kterou může Ninna poslat>",
+    "<hotová zpráva 2>",
+    "<hotová zpráva 3>"
+  ],
+  "contentIdeas": [
+    "<nápad na content pro tohoto zákazníka>",
+    "<nápad 2>"
+  ],
+  "warnings": ["<varování pokud existuje, jinak prázdné pole>"],
+  "lastAnalyzed": "${new Date().toISOString()}"
+}`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: analysisPrompt }],
+        response_format: { type: "json_object" },
+      });
+
+      const raw = completion.choices[0]?.message?.content || "{}";
+      const profile = JSON.parse(raw);
+      await storage.updateAiProfile(userId, profile);
+      res.json(profile);
+    } catch (err) {
+      console.error("AI Manager analyze error:", err);
+      res.status(500).json({ message: "Chyba při analýze" });
+    }
+  });
+
+  // Get full manager overview — all users with their profiles
+  app.get("/api/manager/overview", requireOwner, async (_req, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      const allConvs = await storage.getAllConversations();
+      const allMsgs = await storage.getAllMessages();
+
+      const convsByUser: Record<number, number> = {};
+      for (const conv of allConvs) {
+        convsByUser[conv.userId] = (convsByUser[conv.userId] || 0) + 1;
+      }
+
+      const msgsByUser: Record<number, { count: number; lastAt: string | null }> = {};
+      for (const msg of allMsgs) {
+        const conv = allConvs.find(c => c.id === msg.conversationId);
+        if (!conv) continue;
+        if (!msgsByUser[conv.userId]) msgsByUser[conv.userId] = { count: 0, lastAt: null };
+        msgsByUser[conv.userId].count++;
+        const msgTime = msg.createdAt as any as string;
+        if (!msgsByUser[conv.userId].lastAt || msgTime > msgsByUser[conv.userId].lastAt!) {
+          msgsByUser[conv.userId].lastAt = msgTime;
+        }
+      }
+
+      const result = allUsers.map(u => ({
+        id: u.id,
+        name: u.name,
+        messageCount: u.messageCount,
+        createdAt: u.createdAt,
+        conversations: convsByUser[u.id] || 0,
+        totalMessages: msgsByUser[u.id]?.count || 0,
+        lastActivity: msgsByUser[u.id]?.lastAt || null,
+        aiProfile: u.aiProfile || null,
+        aiProfileUpdatedAt: u.aiProfileUpdatedAt || null,
+      }));
+
+      // Sort: hot first, then by last activity
+      result.sort((a, b) => {
+        const statusOrder = { hot: 0, warm: 1, cold: 2, new: 3 };
+        const aStatus = (a.aiProfile as any)?.status || "new";
+        const bStatus = (b.aiProfile as any)?.status || "new";
+        const sDiff = (statusOrder[aStatus as keyof typeof statusOrder] ?? 3) - (statusOrder[bStatus as keyof typeof statusOrder] ?? 3);
+        if (sDiff !== 0) return sDiff;
+        const aT = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+        const bT = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+        return bT - aT;
+      });
+
+      res.json(result);
+    } catch (err) {
+      console.error("Manager overview error:", err);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // Analyze ALL users at once (batch)
+  app.post("/api/manager/analyze-all", requireOwner, async (_req, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      const usersWithMessages = [];
+
+      for (const user of allUsers) {
+        const convs = await storage.getConversationsByUser(user.id);
+        let msgCount = 0;
+        for (const conv of convs) {
+          const msgs = await storage.getMessagesByConversation(conv.id);
+          msgCount += msgs.filter(m => m.role === "user").length;
+        }
+        if (msgCount > 0) usersWithMessages.push(user.id);
+      }
+
+      res.json({ started: true, count: usersWithMessages.length, userIds: usersWithMessages });
+
+      // Run in background
+      (async () => {
+        for (const uid of usersWithMessages) {
+          try {
+            const user = await storage.getUser(uid);
+            if (!user) continue;
+            const convs = await storage.getConversationsByUser(uid);
+            let allMsgs: { role: string; content: string }[] = [];
+            for (const conv of convs) {
+              const msgs = await storage.getMessagesByConversation(conv.id);
+              allMsgs = allMsgs.concat(msgs.map(m => ({ role: m.role, content: m.content })));
+            }
+            const transcript = allMsgs.slice(-40).map(m => `${m.role === "user" ? user.name : "Ninna"}: ${m.content}`).join("\n");
+            const completion = await openai.chat.completions.create({
+              model: "gpt-4o",
+              messages: [{ role: "user", content: `Analyzuj zákazníka "${user.name}". Konverzace:\n${transcript}\n\nVrať JSON: {"status":"hot|warm|cold|new","statusLabel":"...","engagementScore":0-100,"summary":"...","personality":[],"interests":[],"buyingPotential":"vysoký|střední|nízký","nextAction":"...","suggestedMessages":[],"contentIdeas":[],"warnings":[],"lastAnalyzed":"${new Date().toISOString()}"}` }],
+              response_format: { type: "json_object" },
+            });
+            const profile = JSON.parse(completion.choices[0]?.message?.content || "{}");
+            await storage.updateAiProfile(uid, profile);
+            await new Promise(r => setTimeout(r, 500)); // rate limit buffer
+          } catch (e) {
+            console.error(`Manager analyze failed for user ${uid}:`, e);
+          }
+        }
+        console.log(`[AI Manager] Batch analysis complete for ${usersWithMessages.length} users`);
+      })();
+    } catch (err) {
+      console.error("Analyze all error:", err);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
   return httpServer;
 }
