@@ -3,6 +3,23 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import OpenAI from "openai";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+const uploadDir = path.resolve(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -467,6 +484,175 @@ Vrať JSON s tímto přesným formátem (bez markdown, jen čistý JSON):
       res.json(result);
     } catch (err) {
       console.error("Manager overview error:", err);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // ─── Trend Scanner (owner only) ───────────────────────────────────────────
+
+  app.post("/api/manager/trends", requireOwner, async (_req, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      const allConvs = await storage.getAllConversations();
+      const allMsgs = await storage.getAllMessages();
+      const vaultItems = await storage.getAllContentItems();
+
+      const userTopics = allMsgs
+        .filter(m => m.role === "user")
+        .slice(-100)
+        .map(m => m.content)
+        .join("\n");
+
+      const prompt = `Jsi expert na OnlyFans marketing a správu agentury. Na základě níže uvedených dat vytvoř analýzu trendů a doporučení.
+
+STATISTIKY AGENTURY:
+- Zákazníků: ${allUsers.length}
+- Konverzací: ${allConvs.length}
+- Celkem zpráv: ${allMsgs.length}
+- Obsah ve vaultu: ${vaultItems.length} položek
+
+POSLEDNÍ TÉMATA OD ZÁKAZNÍKŮ (co zákazníci řeší):
+${userTopics.slice(0, 3000)}
+
+Analyzuj a vrať JSON (bez markdown, čistý JSON):
+{
+  "trendingTopics": ["<trend 1>", "<trend 2>", "<trend 3>", "<trend 4>", "<trend 5>"],
+  "contentRecommendations": [
+    {"type": "<foto/video/audio/text>", "description": "<co přesně vytvořit>", "priority": "vysoká|střední|nízká"},
+    {"type": "...", "description": "...", "priority": "..."}
+  ],
+  "promotionStrategy": [
+    {"platform": "<Twitter/Reddit/TikTok/Instagram>", "action": "<konkrétní krok co udělat>", "timing": "<kdy to udělat>"},
+    {"platform": "...", "action": "...", "timing": "..."}
+  ],
+  "engagementTips": ["<tip 1>", "<tip 2>", "<tip 3>"],
+  "warnings": ["<varování pokud existuje>"],
+  "weeklyPlan": {
+    "monday": "<co dělat>",
+    "tuesday": "<co dělat>",
+    "wednesday": "<co dělat>",
+    "thursday": "<co dělat>",
+    "friday": "<co dělat>",
+    "saturday": "<co dělat>",
+    "sunday": "<co dělat>"
+  },
+  "summary": "<3-4 věty celkové shrnutí a hlavní doporučení>",
+  "analyzedAt": "${new Date().toISOString()}"
+}`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+      });
+
+      const result = JSON.parse(completion.choices[0]?.message?.content || "{}");
+      res.json(result);
+    } catch (err) {
+      console.error("Trend scanner error:", err);
+      res.status(500).json({ message: "Chyba při analýze trendů" });
+    }
+  });
+
+  // ─── Broadcast message (owner/agent) ────────────────────────────────────────
+
+  app.post("/api/manager/broadcast", requireOwner, async (req, res) => {
+    try {
+      const { message } = req.body;
+      if (!message?.trim()) return res.status(400).json({ message: "Zpráva je povinná" });
+
+      const allConvs = await storage.getAllConversations();
+      let sent = 0;
+      for (const conv of allConvs) {
+        await storage.createMessage(conv.id, "assistant", message.trim());
+        sent++;
+      }
+      res.json({ ok: true, sent });
+    } catch (err) {
+      console.error("Broadcast error:", err);
+      res.status(500).json({ message: "Chyba při odesílání" });
+    }
+  });
+
+  // ─── Content Vault routes (agent + owner) ─────────────────────────────────
+
+  app.use("/uploads", requireAgent, (req, res, next) => {
+    const resolved = path.resolve(uploadDir, path.basename(req.path));
+    if (!resolved.startsWith(uploadDir)) return res.status(403).json({ message: "Forbidden" });
+    if (!fs.existsSync(resolved)) return res.status(404).json({ message: "File not found" });
+    res.sendFile(resolved);
+  });
+
+  app.get("/api/vault/items", requireAgent, async (_req, res) => {
+    try {
+      const items = await storage.getAllContentItems();
+      res.json(items);
+    } catch (err) {
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  app.post("/api/vault/upload", requireAgent, upload.single("file"), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) return res.status(400).json({ message: "Soubor je povinný" });
+
+      const tags = req.body.tags ? JSON.parse(req.body.tags) : [];
+      const category = req.body.category || "general";
+      const description = req.body.description || null;
+
+      const item = await storage.createContentItem({
+        filename: file.filename,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        tags,
+        category,
+        description,
+      });
+      res.status(201).json(item);
+    } catch (err) {
+      console.error("Vault upload error:", err);
+      res.status(500).json({ message: "Chyba při nahrávání" });
+    }
+  });
+
+  app.delete("/api/vault/items/:id", requireAgent, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const item = await storage.getContentItem(id);
+      if (!item) return res.status(404).json({ message: "Not found" });
+      const filePath = path.join(uploadDir, item.filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      await storage.deleteContentItem(id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  app.post("/api/vault/items/:id/send/:conversationId", requireAgent, async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.id);
+      const convId = parseInt(req.params.conversationId);
+      if (isNaN(itemId) || isNaN(convId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const item = await storage.getContentItem(itemId);
+      if (!item) return res.status(404).json({ message: "Content not found" });
+
+      const conv = await storage.getConversation(convId);
+      if (!conv) return res.status(404).json({ message: "Conversation not found" });
+
+      const msgContent = item.description
+        ? `📎 ${item.description}\n[${item.originalName}]`
+        : `📎 [${item.originalName}]`;
+
+      const message = await storage.createMessage(convId, "assistant", msgContent);
+      await storage.incrementContentUsage(itemId);
+      sendToAgency(conv.userId, msgContent, "assistant");
+      res.status(201).json(message);
+    } catch (err) {
       res.status(500).json({ message: "Internal error" });
     }
   });

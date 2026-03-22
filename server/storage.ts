@@ -1,4 +1,4 @@
-import { users, conversations, messages, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage } from "@shared/schema";
+import { users, conversations, messages, contentItems, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 
@@ -20,6 +20,11 @@ export interface IStorage {
   getAllMessages(): Promise<Message[]>;
   createMessage(conversationId: number, role: string, content: string): Promise<Message>;
   updateAiProfile(userId: number, profile: Record<string, any>): Promise<void>;
+  createContentItem(item: InsertContentItem): Promise<ContentItem>;
+  getAllContentItems(): Promise<ContentItem[]>;
+  getContentItem(id: number): Promise<ContentItem | undefined>;
+  deleteContentItem(id: number): Promise<void>;
+  incrementContentUsage(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -96,6 +101,31 @@ export class DatabaseStorage implements IStorage {
   async createMessage(conversationId: number, role: string, content: string): Promise<Message> {
     const [message] = await db.insert(messages).values({ conversationId, role, content }).returning();
     return message;
+  }
+
+  async createContentItem(item: InsertContentItem): Promise<ContentItem> {
+    const [ci] = await db.insert(contentItems).values(item).returning();
+    return ci;
+  }
+
+  async getAllContentItems(): Promise<ContentItem[]> {
+    return db.select().from(contentItems).orderBy(desc(contentItems.createdAt));
+  }
+
+  async getContentItem(id: number): Promise<ContentItem | undefined> {
+    const [ci] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+    return ci;
+  }
+
+  async deleteContentItem(id: number): Promise<void> {
+    await db.delete(contentItems).where(eq(contentItems.id, id));
+  }
+
+  async incrementContentUsage(id: number): Promise<void> {
+    const ci = await this.getContentItem(id);
+    if (ci) {
+      await db.update(contentItems).set({ timesUsed: ci.timesUsed + 1 }).where(eq(contentItems.id, id));
+    }
   }
 }
 

@@ -34,7 +34,7 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 
 ### Database
 - **PostgreSQL** via Drizzle ORM
-- **Tables**: `users` (with `aiProfile` jsonb, `aiProfileUpdatedAt`), `conversations` (with `manualMode`, `assignedAgent`), `messages`
+- **Tables**: `users` (with `aiProfile` jsonb, `aiProfileUpdatedAt`), `conversations` (with `manualMode`, `assignedAgent`), `messages`, `content_items` (vault)
 - **Migrations**: `npx drizzle-kit push`
 
 ### AI Manager System
@@ -42,7 +42,16 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - Generates profiles: status (hot/warm/cold/new), engagement score, personality traits, interests, buying potential
 - Provides actionable recommendations: next action, suggested messages, content ideas, warnings
 - Batch analysis: analyze all users at once
-- Endpoints: `POST /api/manager/analyze/:userId`, `GET /api/manager/overview`, `POST /api/manager/analyze-all`
+- **Trend Scanner**: AI analyzes agency data and recommends content strategy, promotion platforms, weekly plan
+- **Broadcast**: Send message to all conversations at once
+- Endpoints: `POST /api/manager/analyze/:userId`, `GET /api/manager/overview`, `POST /api/manager/analyze-all`, `POST /api/manager/trends`, `POST /api/manager/broadcast`
+
+### Content Vault
+- Upload photos/videos/audio content with tags and categories
+- Content stored in `uploads/` directory, metadata in `content_items` table
+- Send content directly to customer conversations
+- Track usage count per content item
+- Endpoints: `GET /api/vault/items`, `POST /api/vault/upload`, `DELETE /api/vault/items/:id`, `POST /api/vault/items/:id/send/:conversationId`
 
 ### Deployment
 - **Target**: Autoscale
