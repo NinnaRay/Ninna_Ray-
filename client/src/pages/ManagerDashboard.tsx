@@ -4,19 +4,31 @@ import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
 
+type ActionItem = {
+  message: string;
+  timing: string;
+  purpose: "build" | "sell" | "hook";
+  photoId: number | null;
+  photoNote: string | null;
+};
+
 type AiProfile = {
   status: "hot" | "warm" | "cold" | "new";
   statusLabel: string;
   engagementScore: number;
+  buyingPotential: string;
+  strategy?: "build" | "sell" | "hook";
   summary: string;
   personality: string[];
   interests: string[];
-  buyingPotential: string;
-  nextAction: string;
-  suggestedMessages: string[];
-  contentIdeas: string[];
+  mainDriver?: string;
+  nextAction?: string;
+  actionQueue?: ActionItem[];
+  suggestedMessages?: string[];
+  contentIdeas?: string[];
+  styleNotes?: string;
   trendInsights?: string[];
-  warnings: string[];
+  warnings?: string[];
   lastAnalyzed: string;
 };
 
@@ -294,21 +306,25 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: M
           {filteredGroups.map(group => {
             const cfg = STATUS_CONFIG[group.bestStatus];
             const isSelected = selectedGroup === group.name;
+            const p = group.bestProfile;
+            const stratLabel = p?.strategy === "sell" ? "💰 SELL" : p?.strategy === "hook" ? "🎣 HOOK" : p?.strategy === "build" ? "🤝 BUILD" : null;
             return (
               <button key={group.name} onClick={() => setSelectedGroup(group.name)} data-testid={`button-select-group-${group.name}`}
-                className={`w-full text-left px-4 py-3 border-b border-neutral-800/50 hover:bg-neutral-800/40 transition-colors ${isSelected ? "bg-neutral-800" : ""}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>{group.name[0]?.toUpperCase()}</div>
-                    <div className="min-w-0">
+                className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/50 hover:bg-neutral-800/40 transition-colors ${isSelected ? "bg-neutral-800" : ""}`}>
+                <div className="flex items-center gap-2">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>{group.name[0]?.toUpperCase()}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
                       <p className="font-semibold text-sm truncate">{group.name}</p>
-                      <p className="text-[10px] text-neutral-500">
-                        {group.totalMessages} zpráv
-                        {group.sessions.length > 1 && <span className="ml-1 text-neutral-600">· {group.sessions.length}x</span>}
-                      </p>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ml-1 ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
                     </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[10px] text-neutral-500">{group.totalMessages} zpráv</span>
+                      {p && <span className="text-[10px] text-neutral-600">· {p.engagementScore}%</span>}
+                      {stratLabel && <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${p?.strategy === "sell" ? "bg-yellow-500/20 text-yellow-400" : p?.strategy === "hook" ? "bg-purple-500/20 text-purple-400" : "bg-blue-500/20 text-blue-400"}`}>{stratLabel}</span>}
+                    </div>
+                    {p?.mainDriver && <p className="text-[10px] text-neutral-400 truncate mt-0.5">{p.mainDriver}</p>}
                   </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
                 </div>
               </button>
             );
@@ -343,38 +359,80 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: M
                 <button onClick={() => primaryUser && analyzeMut.mutate(primaryUser.id)} className="bg-emerald-600 text-white px-5 py-2 rounded-xl font-bold text-sm">Spustit analýzu</button>
               </div>
             ) : (
-              <div className="p-4 space-y-4">
+              <div className="p-4 space-y-3">
                 {(() => {
                   const p = activeGroup.bestProfile!;
                   const cfg = STATUS_CONFIG[p.status];
+                  const purposeConfig = {
+                    build: { icon: "🤝", label: "BUILD", cls: "bg-blue-500/20 border-blue-500/30 text-blue-400" },
+                    sell: { icon: "💰", label: "SELL", cls: "bg-yellow-500/20 border-yellow-500/30 text-yellow-400" },
+                    hook: { icon: "🎣", label: "HOOK", cls: "bg-purple-500/20 border-purple-500/30 text-purple-400" },
+                  };
+                  const strat = p.strategy || "build";
+                  const stratCfg = purposeConfig[strat];
                   return (<>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
-                      <span className="text-xs text-neutral-500">Potenciál: <strong className={p.buyingPotential === "vysoký" ? "text-red-400" : p.buyingPotential === "střední" ? "text-orange-400" : "text-blue-400"}>{p.buyingPotential}</strong></span>
+                      <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${stratCfg.cls}`}>{stratCfg.icon} {stratCfg.label}</span>
+                      <span className="text-xs text-neutral-500">{p.engagementScore}% eng · {p.buyingPotential}</span>
                     </div>
-                    <div><div className="flex justify-between text-[10px] text-neutral-500 mb-1"><span>Engagement</span><span className="font-bold">{p.engagementScore}%</span></div><ScoreBar score={p.engagementScore} /></div>
+                    <ScoreBar score={p.engagementScore} />
+
+                    {(p.mainDriver || p.nextAction) && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">🎯 Hlavní driver</p>
+                        <p className="text-sm text-emerald-300 font-medium">{p.mainDriver || p.nextAction}</p>
+                      </div>
+                    )}
+
                     <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">📋 Profil</p>
-                      <p className="text-sm text-neutral-300">{p.summary}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎭 Osobnost</p>
-                        <div className="flex flex-wrap gap-1">{p.personality.map((t, i) => <span key={i} className="text-[10px] bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded">{t}</span>)}</div>
-                      </div>
-                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">❤️ Zájmy</p>
-                        <div className="flex flex-wrap gap-1">{p.interests.map((t, i) => <span key={i} className="text-[10px] bg-pink-500/20 border border-pink-500/30 text-pink-400 px-1.5 py-0.5 rounded">{t}</span>)}</div>
+                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">📋 Kontext</p>
+                      <p className="text-xs text-neutral-300">{p.summary}</p>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {p.personality.map((t, i) => <span key={i} className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded">{t}</span>)}
+                        {p.interests.map((t, i) => <span key={`int-${i}`} className="text-[9px] bg-pink-500/15 text-pink-400 px-1.5 py-0.5 rounded">{t}</span>)}
                       </div>
                     </div>
-                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
-                      <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">💡 Doporučená akce</p>
-                      <p className="text-sm text-emerald-300">{p.nextAction}</p>
-                    </div>
-                    {p.suggestedMessages.length > 0 && (
+
+                    {p.styleNotes && (
+                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-1">🎨 Styl komunikace</p>
+                        <p className="text-xs text-amber-200">{p.styleNotes}</p>
+                      </div>
+                    )}
+
+                    {(p.actionQueue || []).length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📨 Fronta zpráv k odeslání</p>
+                        {(p.actionQueue || []).map((action, i) => {
+                          const aCfg = purposeConfig[action.purpose] || purposeConfig.build;
+                          return (
+                            <div key={i} data-testid={`action-card-${i}`}
+                              className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${aCfg.cls}`}>{aCfg.icon} {aCfg.label}</span>
+                                  <span className="text-[10px] text-neutral-500">⏰ {action.timing}</span>
+                                </div>
+                                <CopyButton text={action.message} />
+                              </div>
+                              <p className="text-sm text-white leading-relaxed">{action.message}</p>
+                              {action.photoId && (
+                                <div className="flex items-center gap-1.5 text-[10px] text-pink-400 bg-pink-500/10 rounded-lg px-2 py-1.5">
+                                  <span>📸 Fotka #{action.photoId}</span>
+                                  {action.photoNote && <span className="text-pink-300">— {action.photoNote}</span>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {(p.suggestedMessages || []).length > 0 && !(p.actionQueue || []).length && (
                       <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
                         <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">✍️ Navrhované zprávy</p>
-                        {p.suggestedMessages.map((msg, i) => (
+                        {(p.suggestedMessages || []).map((msg, i) => (
                           <div key={i} className="flex items-start justify-between gap-1 bg-neutral-800/60 rounded-lg px-2 py-2 mb-1">
                             <p className="text-xs text-white">{msg}</p>
                             <CopyButton text={msg} />
@@ -382,26 +440,13 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: M
                         ))}
                       </div>
                     )}
-                    {p.contentIdeas.length > 0 && (
-                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎬 Content nápady</p>
-                        {p.contentIdeas.map((idea, i) => (
-                          <div key={i} className="flex items-start gap-1 mb-1"><span className="text-pink-500 text-xs">→</span><p className="text-xs text-neutral-300">{idea}</p></div>
-                        ))}
-                      </div>
-                    )}
+
                     {(p.trendInsights || []).length > 0 && (
                       <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3">
-                        <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-2">📈 Trendy & strategie</p>
+                        <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-2">📈 Trendy</p>
                         {(p.trendInsights || []).map((tip, i) => (
                           <div key={i} className="flex items-start gap-1 mb-1"><span className="text-purple-400 text-xs">→</span><p className="text-xs text-purple-200">{tip}</p></div>
                         ))}
-                      </div>
-                    )}
-                    {p.warnings.length > 0 && (
-                      <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-                        <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">⚠️ Varování</p>
-                        {p.warnings.map((w, i) => <p key={i} className="text-xs text-red-300">{w}</p>)}
                       </div>
                     )}
                   </>);

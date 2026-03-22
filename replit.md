@@ -38,16 +38,23 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - **Migrations**: `npx drizzle-kit push`
 
 ### AI Manager System
-- GPT-4o analyzes customer conversation history
-- Generates profiles: status (hot/warm/cold/new), engagement score, personality traits, interests, buying potential
-- Provides actionable recommendations: next action, suggested messages, content ideas, warnings
-- Batch analysis: analyze all users at once
-- **User Grouping**: Users with the same name are grouped together in the Customers tab. Each group shows aggregated stats and can be expanded to see individual sessions. Each session has a "Profil" (AI profile) and "Zpravy" (conversations/messages) view.
-- **Conversation Viewer**: Managers can view full conversation history for any user session, with chat-bubble UI showing user/assistant messages.
-- **Search**: Filter users by name with a search input in the Customers tab.
-- **Trend Scanner**: AI analyzes agency data and recommends content strategy, promotion platforms, weekly plan
-- **Broadcast**: Send message to all conversations at once
-- Endpoints: `POST /api/manager/analyze/:userId`, `GET /api/manager/overview`, `POST /api/manager/analyze-all`, `POST /api/manager/trends`, `POST /api/manager/broadcast`, `GET /api/manager/users/:userId/conversations`
+- **Autonomous AI agent** — not just analysis but ACTIONABLE INSTRUCTIONS ready to execute
+- GPT-4o analyzes last 200 messages + vault photos + OnlyFans trend knowledge
+- Generates action-based profiles with:
+  - Status (hot/warm/cold/new), engagement score, strategy (build/sell/hook)
+  - **mainDriver**: single directive that drives the whole conversation
+  - **actionQueue**: ready-to-send messages with timing, purpose (build/sell/hook), and vault photo assignments
+  - **styleNotes**: communication style adapted from warnings (not displayed as warnings)
+  - **trendInsights**: relevant trends for this specific customer
+- Vault photos are passed to analysis prompt — AI categorizes them and assigns to specific messages
+- Strategy logic: high engagement → SELL (monetize), medium → BUILD (relationship), low → HOOK (re-engage)
+- **User Grouping**: Users grouped by normalized name (diacritics stripped, case-insensitive). Sidebar shows engagement %, strategy badge, main driver preview.
+- **Conversation Viewer**: Full chat history below profile in one scrollable view
+- **Search**: Filter users by name
+- **Trend Scanner**: Agency-wide content strategy
+- **Broadcast**: Send to all conversations
+- Selected user persists across tab switches (state lifted to parent)
+- Endpoints: `POST /api/manager/analyze/:userId`, `GET /api/manager/overview`, `POST /api/manager/analyze-all`, `POST /api/manager/trends`, `POST /api/manager/broadcast`, `GET /api/manager/users/:userId/conversations`, `POST /api/manager/users/bulk-conversations`
 
 ### Content Vault
 - Upload photos/videos/audio content with tags and categories
