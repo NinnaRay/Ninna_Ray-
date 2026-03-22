@@ -15,6 +15,7 @@ type AiProfile = {
   nextAction: string;
   suggestedMessages: string[];
   contentIdeas: string[];
+  trendInsights?: string[];
   warnings: string[];
   lastAnalyzed: string;
 };
@@ -138,10 +139,14 @@ type UserGroup = {
   totalConversations: number;
 };
 
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 function groupUsers(users: ManagerUser[]): UserGroup[] {
   const map = new Map<string, ManagerUser[]>();
   users.forEach(u => {
-    const key = u.name.trim().toLowerCase();
+    const key = normalizeName(u.name);
     const arr = map.get(key) || [];
     arr.push(u);
     map.set(key, arr);
@@ -224,8 +229,7 @@ function ChatHistory({ userIds }: { userIds: number[] }) {
 
 // ─── Tab: Customers ──────────────────────────────────────────────────────────
 
-function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<typeof useQueryClient> }) {
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: ManagerUser[]; qc: ReturnType<typeof useQueryClient>; selectedGroup: string | null; setSelectedGroup: (g: string | null) => void }) {
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
   const [filter, setFilter] = useState<"all" | "hot" | "warm" | "cold" | "new">("all");
@@ -304,7 +308,7 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
                       </p>
                     </div>
                   </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{group.bestProfile?.statusLabel || "Nový"}</span>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
                 </div>
               </button>
             );
@@ -383,6 +387,14 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
                         <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎬 Content nápady</p>
                         {p.contentIdeas.map((idea, i) => (
                           <div key={i} className="flex items-start gap-1 mb-1"><span className="text-pink-500 text-xs">→</span><p className="text-xs text-neutral-300">{idea}</p></div>
+                        ))}
+                      </div>
+                    )}
+                    {(p.trendInsights || []).length > 0 && (
+                      <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-2">📈 Trendy & strategie</p>
+                        {(p.trendInsights || []).map((tip, i) => (
+                          <div key={i} className="flex items-start gap-1 mb-1"><span className="text-purple-400 text-xs">→</span><p className="text-xs text-purple-200">{tip}</p></div>
                         ))}
                       </div>
                     )}
@@ -705,6 +717,7 @@ function BroadcastTab() {
 export default function ManagerDashboard() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<"customers" | "vault" | "trends" | "broadcast">("customers");
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -757,7 +770,7 @@ export default function ManagerDashboard() {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {activeTab === "customers" && <CustomersTab users={users} qc={qc} />}
+        {activeTab === "customers" && <CustomersTab users={users} qc={qc} selectedGroup={selectedGroup} setSelectedGroup={setSelectedGroup} />}
         {activeTab === "vault" && <VaultTab />}
         {activeTab === "trends" && <TrendsTab />}
         {activeTab === "broadcast" && <BroadcastTab />}
