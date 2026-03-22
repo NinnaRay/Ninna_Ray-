@@ -568,6 +568,8 @@ function VaultTab() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [desc, setDesc] = useState("");
   const [tags, setTags] = useState("");
   const [category, setCategory] = useState("general");
@@ -577,18 +579,39 @@ function VaultTab() {
     queryFn: () => fetch("/api/vault/items").then(r => r.json()),
   });
 
+  const handleFileSelect = () => {
+    const files = fileRef.current?.files;
+    if (files) setSelectedFiles(Array.from(files));
+  };
+
+  const removeFile = (idx: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== idx));
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
   const handleUpload = async () => {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
+    if (selectedFiles.length === 0) return;
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("description", desc);
-    fd.append("tags", JSON.stringify(tags.split(",").map(t => t.trim()).filter(Boolean)));
-    fd.append("category", category);
-    await fetch("/api/vault/upload", { method: "POST", body: fd });
+    const total = selectedFiles.length;
+    setUploadProgress({ done: 0, total });
+
+    const batchSize = 5;
+    for (let i = 0; i < total; i += batchSize) {
+      const batch = selectedFiles.slice(i, i + batchSize);
+      const fd = new FormData();
+      for (const file of batch) {
+        fd.append("files", file);
+      }
+      fd.append("description", desc);
+      fd.append("tags", JSON.stringify(tags.split(",").map(t => t.trim()).filter(Boolean)));
+      fd.append("category", category);
+      await fetch("/api/vault/upload", { method: "POST", body: fd });
+      setUploadProgress({ done: Math.min(i + batchSize, total), total });
+    }
+
     qc.invalidateQueries({ queryKey: ["/api/vault/items"] });
     setDesc(""); setTags(""); setCategory("general");
+    setSelectedFiles([]);
     if (fileRef.current) fileRef.current.value = "";
     setUploading(false);
   };
@@ -610,15 +633,31 @@ function VaultTab() {
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 space-y-3">
-        <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">📤 Nahrát obsah</p>
-        <input ref={fileRef} type="file" accept="image/*,video/*,audio/*"
+        <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">📤 Nahrat obsah</p>
+        <input ref={fileRef} type="file" accept="image/*,video/*,audio/*" multiple
+          onChange={handleFileSelect}
           data-testid="input-vault-file"
           className="w-full text-sm text-neutral-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 file:cursor-pointer" />
-        <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Popis (volitelné)"
+        {selectedFiles.length > 0 && (
+          <div className="bg-neutral-800/50 border border-neutral-700 rounded-xl p-2 space-y-1">
+            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">
+              Vybrano: {selectedFiles.length} souboru ({(selectedFiles.reduce((s, f) => s + f.size, 0) / (1024 * 1024)).toFixed(1)} MB)
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {selectedFiles.map((f, idx) => (
+                <span key={idx} className="inline-flex items-center gap-1 text-[10px] bg-neutral-700 text-neutral-300 px-2 py-1 rounded-lg">
+                  {f.type.startsWith("image") ? "📸" : f.type.startsWith("video") ? "🎬" : "🎵"} {f.name.length > 20 ? f.name.slice(0, 17) + "..." : f.name}
+                  <button onClick={() => removeFile(idx)} className="text-neutral-500 hover:text-red-400 ml-0.5">×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Popis (volitelne)"
           data-testid="input-vault-description"
           className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500" />
         <div className="flex gap-2">
-          <input value={tags} onChange={e => setTags(e.target.value)} placeholder="Tagy (oddělené čárkou)"
+          <input value={tags} onChange={e => setTags(e.target.value)} placeholder="Tagy (oddelene carkou)"
             data-testid="input-vault-tags"
             className="flex-1 bg-neutral-800 border border-neutral-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500" />
           <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-vault-category"
@@ -626,9 +665,13 @@ function VaultTab() {
             {CATS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </div>
-        <button onClick={handleUpload} disabled={uploading} data-testid="button-vault-upload"
+        <button onClick={handleUpload} disabled={uploading || selectedFiles.length === 0} data-testid="button-vault-upload"
           className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
-          {uploading ? "⏳ Nahrávám..." : "📤 Nahrát"}
+          {uploading
+            ? `⏳ Nahravam ${uploadProgress.done}/${uploadProgress.total}...`
+            : selectedFiles.length > 1
+            ? `📤 Nahrat ${selectedFiles.length} souboru`
+            : "📤 Nahrat"}
         </button>
       </div>
 

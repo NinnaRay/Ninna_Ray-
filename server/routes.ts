@@ -640,25 +640,29 @@ Analyzuj a vrať JSON (bez markdown, čistý JSON):
     }
   });
 
-  app.post("/api/vault/upload", requireAgent, upload.single("file"), async (req, res) => {
+  app.post("/api/vault/upload", requireAgent, upload.array("files", 50), async (req, res) => {
     try {
-      const file = req.file;
-      if (!file) return res.status(400).json({ message: "Soubor je povinný" });
+      const files = req.files as Express.Multer.File[] | undefined;
+      if (!files || files.length === 0) return res.status(400).json({ message: "Soubor je povinný" });
 
       const tags = req.body.tags ? JSON.parse(req.body.tags) : [];
       const category = req.body.category || "general";
       const description = req.body.description || null;
 
-      const item = await storage.createContentItem({
-        filename: file.filename,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        tags,
-        category,
-        description,
-      });
-      res.status(201).json(item);
+      const items = [];
+      for (const file of files) {
+        const item = await storage.createContentItem({
+          filename: file.filename,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          tags,
+          category,
+          description,
+        });
+        items.push(item);
+      }
+      res.status(201).json(items.length === 1 ? items[0] : items);
     } catch (err) {
       console.error("Vault upload error:", err);
       res.status(500).json({ message: "Chyba při nahrávání" });
