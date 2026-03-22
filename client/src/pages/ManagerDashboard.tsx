@@ -406,7 +406,7 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
               return best;
             }, "" as string);
             return (
-              <button key={group.name} onClick={() => { setSelectedGroup(group.name); setShowProfile(false); }}
+              <button key={group.name} onClick={() => { setSelectedGroup(group.name); setShowProfile(true); }}
                 data-testid={`button-select-group-${group.name}`}
                 className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/50 hover:bg-neutral-800/40 transition-colors ${isSelected ? "bg-neutral-800" : ""}`}>
                 <div className="flex items-center gap-2.5">
@@ -447,7 +447,7 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="border-b border-neutral-800 px-4 py-2 bg-neutral-900/80 backdrop-blur flex items-center justify-between z-10">
               <div className="flex items-center gap-3">
-                <button onClick={() => { setSelectedGroup(null); setShowProfile(false); }} className="md:hidden text-neutral-500 hover:text-white text-sm" data-testid="button-back">←</button>
+                <button onClick={() => { setSelectedGroup(null); setShowProfile(true); }} className="md:hidden text-neutral-500 hover:text-white text-sm" data-testid="button-back">←</button>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${STATUS_CONFIG[selectedGroupData.bestStatus].bg} ${STATUS_CONFIG[selectedGroupData.bestStatus].border} ${STATUS_CONFIG[selectedGroupData.bestStatus].text}`}>
                   {selectedGroupData.name[0]?.toUpperCase()}
                 </div>
@@ -462,9 +462,9 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
                   className="text-[10px] bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-300 px-2.5 py-1.5 rounded-lg font-bold transition-colors">
                   {analyzingId !== null ? "⏳" : "🧠"}
                 </button>
-                <button onClick={() => setShowProfile(!showProfile)} data-testid="button-toggle-profile"
-                  className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-colors ${showProfile ? "bg-emerald-600 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300"}`}>
-                  {showProfile ? "💬 Chat" : "📋 Profil"}
+                <button onClick={() => setShowProfile(!showProfile)} data-testid="button-toggle-chat"
+                  className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-colors ${!showProfile ? "bg-emerald-600 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300"}`}>
+                  {showProfile ? "💬 Zpravy" : "📋 Profil"}
                 </button>
               </div>
             </div>
