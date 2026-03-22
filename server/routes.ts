@@ -410,48 +410,84 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
         .map(m => `${m.role === "user" ? user.name : "Ninna"}: ${m.content}`)
         .join("\n");
 
-      const analysisPrompt = `Jsi senior strategický analytik pro OnlyFans agenturu. Tvým úkolem je vytvořit KOMPLEXNÍ profil zákazníka "${user.name}" na základě:
+      // Get vault photos for context
+      const vaultItems = await storage.getAllContentItems();
+      const photoList = vaultItems
+        .filter(item => item.mimeType.startsWith("image") || item.mimeType.startsWith("video"))
+        .map(item => `[ID:${item.id}] "${item.originalName}" (${item.category}${item.tags.length > 0 ? ", tagy: " + item.tags.join(", ") : ""}${item.description ? ", popis: " + item.description : ""})`)
+        .join("\n");
 
-1) KONVERZACE se zákazníkem (posledních max 200 zpráv):
+      const analysisPrompt = `Jsi autonomní AI agent řídící OnlyFans konverzace. Tvůj výstup NEJSOU rady ani analýzy - jsou to HOTOVÉ INSTRUKCE k okamžitému provedení.
+
+ZÁKAZNÍK: "${user.name}"
+
+KONVERZACE (posledních max 200 zpráv):
 ${transcript}
 
-2) Tvoje EXPERTNÍ ZNALOSTI aktuálních trendů na OnlyFans a sociálních sítích:
-- Co aktuálně frčí mezi fanoušky na OnlyFans (typy contentu, formáty, fetiše, interakce)
-- Jak úspěšné kreátorky přitahují a udržují zákazníky
-- Nejlepší praktiky pro PPV, tipy, custom content, sexting
-- Psychologie mužských zákazníků na podobných platformách
-- Jak budovat loajalitu a zvyšovat utrácení
+DOSTUPNÉ FOTKY VE VAULTU:
+${photoList || "(žádné fotky nahrané)"}
 
-Na základě OBOU zdrojů (konverzace + tvoje znalosti trendů) vytvoř hloubkový profil.
+TVOJE ZNALOSTI: Použij svoje expertní znalosti OnlyFans trendů, psychologie zákazníků a monetizačních strategií.
 
-DŮLEŽITÉ pro statusLabel: Použij POUZE jedno z těchto krátkých slov: "Horký", "Teplý", "Studený", "Nový". NIC víc.
+═══ PRAVIDLA ═══
+1. NIKDY negeneruj obecné rady. Vždy generuj HOTOVÉ výstupy připravené k odeslání.
+2. Každá navrhovaná zpráva MUSÍ mít: text, timing (kdy odeslat), účel (build/sell/hook), a pokud je to vhodné - ID fotky z vaultu.
+3. Osobnost a zájmy nepiš jako text k zobrazení - převeď je na KONKRÉTNÍ AKCE.
+4. Warning neslou6í k zobrazení - upravi podle něj STYL komunikace ve zprávách.
+5. Metriky řídí strategii:
+   - engagement vysoký (70+) → tlač monetizaci, PPV, custom content
+   - engagement střední (40-69) → buduj vztah, personalizace, intimita
+   - engagement nízký (pod 40) → testuj hooky, provokuj, re-engage
+6. Fotky z vaultu roztřiď podle typu a přiřaď ke konkrétním zprávám.
+7. Navazuj na POSLEDNÍ zprávy v konverzaci - pokračuj přirozeně tam, kde skončil.
 
-Vrať JSON s tímto přesným formátem (bez markdown, jen čistý JSON):
+DŮLEŽITÉ: statusLabel MUSÍ být POUZE jedno slovo: "Horký", "Teplý", "Studený" nebo "Nový".
+
+Vrať JSON (bez markdown, čistý JSON):
 {
   "status": "hot|warm|cold|new",
   "statusLabel": "Horký|Teplý|Studený|Nový",
   "engagementScore": <0-100>,
-  "summary": "<3-5 vět hloubkový profil zákazníka - jeho chování, motivace, co ho přitahuje, jaký typ interakce preferuje>",
-  "personality": ["<vlastnost1>", "<vlastnost2>", "<vlastnost3>", "<vlastnost4>"],
-  "interests": ["<zájem1>", "<zájem2>", "<zájem3>"],
   "buyingPotential": "vysoký|střední|nízký",
-  "nextAction": "<konkrétní krok co udělat TEĎ - včetně kontextu proč, založeno na aktuálních trendech>",
-  "suggestedMessages": [
-    "<hotová zpráva 1 - personalizovaná pro tohoto zákazníka, přirozená, flirty>",
-    "<hotová zpráva 2 - jiný přístup/téma>",
-    "<hotová zpráva 3 - provokativní nebo zvědavost budící>",
-    "<hotová zpráva 4 - reaktivační nebo PPV nabídka>"
+  "strategy": "build|sell|hook",
+  "summary": "<2-3 věty: kdo je ten člověk, co chce, jak s ním komunikovat>",
+  "personality": ["<tag1>", "<tag2>", "<tag3>"],
+  "interests": ["<tag1>", "<tag2>", "<tag3>"],
+  "mainDriver": "<1 věta: co teď dělat a PROČ - tohle řídí celou konverzaci>",
+  "actionQueue": [
+    {
+      "message": "<hotová zpráva k odeslání - přirozená, personalizovaná>",
+      "timing": "<kdy odeslat: 'teď' / 'za 1h' / 'za 3h' / 'dnes večer' / 'zítra ráno'>",
+      "purpose": "build|sell|hook",
+      "photoId": <ID fotky z vaultu nebo null>,
+      "photoNote": "<proč tuto fotku použít, nebo null>"
+    },
+    {
+      "message": "<další zpráva>",
+      "timing": "<timing>",
+      "purpose": "build|sell|hook",
+      "photoId": <ID nebo null>,
+      "photoNote": "<poznámka nebo null>"
+    },
+    {
+      "message": "<další zpráva>",
+      "timing": "<timing>",
+      "purpose": "build|sell|hook",
+      "photoId": <ID nebo null>,
+      "photoNote": "<poznámka nebo null>"
+    },
+    {
+      "message": "<další zpráva - např. PPV nabídka nebo reaktivace>",
+      "timing": "<timing>",
+      "purpose": "build|sell|hook",
+      "photoId": <ID nebo null>,
+      "photoNote": "<poznámka nebo null>"
+    }
   ],
-  "contentIdeas": [
-    "<content nápad specifický pro tohoto zákazníka + proč bude fungovat>",
-    "<nápad 2 inspirovaný aktuálními trendy>",
-    "<nápad 3 na PPV nebo custom obsah>"
-  ],
+  "styleNotes": "<jak komunikovat s tímto zákazníkem - tón, co funguje, čemu se vyhnout - tohle NAHRAZUJE warning>",
   "trendInsights": [
-    "<trend/tip z OnlyFans světa relevantní pro tohoto zákazníka>",
-    "<další trend nebo strategie jak ho více zaujmout>"
+    "<konkrétní trend/taktika relevantní pro TOHOTO zákazníka a jak ji použít>"
   ],
-  "warnings": ["<varování pokud existuje, jinak prázdné pole>"],
   "lastAnalyzed": "${new Date().toISOString()}"
 }`;
 
