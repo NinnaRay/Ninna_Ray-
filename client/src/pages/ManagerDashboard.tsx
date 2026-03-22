@@ -199,7 +199,9 @@ function groupUsers(users: ManagerUser[]): UserGroup[] {
   return groups;
 }
 
-function ConversationViewer({ userIds, onBack }: { userIds: number[]; onBack: () => void }) {
+// ─── Tab: Customers (Messenger-style) ────────────────────────────────────────
+
+function ChatStream({ userIds }: { userIds: number[] }) {
   const { data: convs, isLoading } = useQuery<ConversationDetail[]>({
     queryKey: ["/api/manager/bulk-conversations", ...userIds],
     queryFn: () => fetch("/api/manager/users/bulk-conversations", {
@@ -208,84 +210,131 @@ function ConversationViewer({ userIds, onBack }: { userIds: number[]; onBack: ()
       body: JSON.stringify({ userIds }),
     }).then(r => r.json()),
   });
-  const [openConvId, setOpenConvId] = useState<number | null>(null);
-  const openConv = convs?.find(c => c.id === openConvId);
   const msgsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (openConv) msgsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [openConvId]);
+    if (convs && convs.length > 0) {
+      setTimeout(() => msgsEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    }
+  }, [convs]);
 
-  if (isLoading) return <div className="p-6 text-center text-neutral-500 text-sm">Nacitam konverzace...</div>;
-  if (!convs || convs.length === 0) return <div className="p-6 text-center text-neutral-500 text-sm">Zadne konverzace</div>;
+  if (isLoading) return <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">Nacitam zpravy...</div>;
 
-  if (openConv) {
-    return (
-      <div className="flex flex-col h-full">
-        <div className="sticky top-0 border-b border-neutral-800 px-4 py-2 bg-neutral-950/95 backdrop-blur flex items-center gap-2">
-          <button onClick={() => setOpenConvId(null)} data-testid="button-back-convs" className="text-neutral-500 hover:text-white text-sm">←</button>
-          <div className="min-w-0">
-            <p className="font-bold text-sm truncate">{openConv.title}</p>
-            <p className="text-[10px] text-neutral-500">{openConv.messages.length} zprav</p>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {openConv.messages.map(msg => (
-            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+  const allMessages = (convs || []).flatMap(conv =>
+    conv.messages.map(msg => ({ ...msg, convTitle: conv.title }))
+  ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  if (allMessages.length === 0) return <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">Zadne zpravy</div>;
+
+  let lastDate = "";
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5" data-testid="chat-stream">
+      {allMessages.map((msg, idx) => {
+        const msgDate = new Date(msg.createdAt).toLocaleDateString("cs-CZ", { day: "numeric", month: "long", year: "numeric" });
+        const showDate = msgDate !== lastDate;
+        lastDate = msgDate;
+
+        return (
+          <div key={msg.id}>
+            {showDate && (
+              <div className="flex justify-center my-3">
+                <span className="text-[10px] bg-neutral-800 text-neutral-500 px-3 py-1 rounded-full">{msgDate}</span>
+              </div>
+            )}
+            <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               <div data-testid={`msg-bubble-${msg.id}`}
-                className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed ${
                   msg.role === "user"
-                    ? "bg-emerald-600 text-white rounded-br-md"
+                    ? "bg-emerald-600 text-white rounded-br-sm"
                     : msg.role === "system"
-                    ? "bg-neutral-800/50 text-neutral-500 text-xs italic"
-                    : "bg-neutral-800 text-neutral-200 rounded-bl-md"
+                    ? "bg-neutral-800/50 text-neutral-500 text-xs italic rounded-bl-sm"
+                    : "bg-neutral-800 text-neutral-200 rounded-bl-sm"
                 }`}>
                 <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                <p className={`text-[9px] mt-1 ${msg.role === "user" ? "text-emerald-200/60" : "text-neutral-600"}`}>
-                  {new Date(msg.createdAt).toLocaleString("cs-CZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                <p className={`text-[9px] mt-1 ${msg.role === "user" ? "text-emerald-200/50" : "text-neutral-600"}`}>
+                  {new Date(msg.createdAt).toLocaleString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
             </div>
-          ))}
-          <div ref={msgsEndRef} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-4 space-y-2">
-      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">Konverzace ({convs.length})</p>
-      {convs.map(conv => (
-        <button key={conv.id} onClick={() => setOpenConvId(conv.id)} data-testid={`button-conv-${conv.id}`}
-          className="w-full text-left bg-neutral-900 border border-neutral-800 rounded-xl p-3 hover:border-neutral-700 transition-colors">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-white truncate">{conv.title}</p>
-              {conv.lastMessage && (
-                <p className="text-[11px] text-neutral-500 truncate mt-0.5">
-                  {conv.lastMessage.role === "user" ? "→ " : "← "}{conv.lastMessage.content}
-                </p>
-              )}
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-[10px] text-neutral-500">{conv.messageCount} zprav</p>
-              <p className="text-[9px] text-neutral-600">
-                {new Date(conv.createdAt).toLocaleDateString("cs-CZ", { day: "numeric", month: "short" })}
-              </p>
-            </div>
           </div>
-        </button>
-      ))}
+        );
+      })}
+      <div ref={msgsEndRef} />
     </div>
   );
 }
 
-// ─── Tab: Customers ──────────────────────────────────────────────────────────
+function ProfilePanel({ group, analyzeMut, analyzingId }: { group: UserGroup; analyzeMut: any; analyzingId: number | null }) {
+  if (!group.bestProfile) {
+    return (
+      <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-8 text-center gap-3">
+        <p className="text-neutral-500 text-sm">Neanalyzovan</p>
+        <button onClick={() => { for (const s of group.sessions) analyzeMut.mutate(s.id); }}
+          data-testid="button-run-analysis"
+          className="bg-emerald-600 text-white px-5 py-2 rounded-xl font-bold text-sm">Spustit analyzu</button>
+      </div>
+    );
+  }
+  const p = group.bestProfile;
+  const cfg = STATUS_CONFIG[p.status];
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
+        <span className="text-xs text-neutral-500">Potencial: <strong className={p.buyingPotential === "vysoký" ? "text-red-400" : p.buyingPotential === "střední" ? "text-orange-400" : "text-blue-400"}>{p.buyingPotential}</strong></span>
+      </div>
+      <div><div className="flex justify-between text-[10px] text-neutral-500 mb-1"><span>Engagement</span><span className="font-bold">{p.engagementScore}%</span></div><ScoreBar score={p.engagementScore} /></div>
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">📋 Profil</p>
+        <p className="text-sm text-neutral-300">{p.summary}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎭 Osobnost</p>
+          <div className="flex flex-wrap gap-1">{p.personality.map((t, i) => <span key={i} className="text-[10px] bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded">{t}</span>)}</div>
+        </div>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">❤️ Zajmy</p>
+          <div className="flex flex-wrap gap-1">{p.interests.map((t, i) => <span key={i} className="text-[10px] bg-pink-500/20 border border-pink-500/30 text-pink-400 px-1.5 py-0.5 rounded">{t}</span>)}</div>
+        </div>
+      </div>
+      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+        <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">💡 Doporucena akce</p>
+        <p className="text-sm text-emerald-300">{p.nextAction}</p>
+      </div>
+      {p.suggestedMessages.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">✍️ Navrhovane zpravy</p>
+          {p.suggestedMessages.map((msg, i) => (
+            <div key={i} className="flex items-start justify-between gap-1 bg-neutral-800/60 rounded-lg px-2 py-2 mb-1">
+              <p className="text-xs text-white">{msg}</p>
+              <CopyButton text={msg} />
+            </div>
+          ))}
+        </div>
+      )}
+      {p.contentIdeas.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎬 Content napady</p>
+          {p.contentIdeas.map((idea, i) => (
+            <div key={i} className="flex items-start gap-1 mb-1"><span className="text-pink-500 text-xs">→</span><p className="text-xs text-neutral-300">{idea}</p></div>
+          ))}
+        </div>
+      )}
+      {p.warnings.length > 0 && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">⚠️ Varovani</p>
+          {p.warnings.map((w, i) => <p key={i} className="text-xs text-red-300">{w}</p>)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<typeof useQueryClient> }) {
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"profile" | "conversations">("profile");
+  const [showProfile, setShowProfile] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
   const [filter, setFilter] = useState<"all" | "hot" | "warm" | "cold" | "new">("all");
@@ -323,24 +372,14 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
     new: groups.filter(g => g.bestStatus === "new").length,
   };
 
-  const handleSelectGroup = (group: UserGroup) => {
-    setSelectedGroup(group.name);
-    setViewMode("profile");
-  };
-
-  const handleBack = () => {
-    setSelectedGroup(null);
-    setViewMode("profile");
-  };
-
   return (
     <div className="flex flex-1 overflow-hidden">
-      <div className={`w-full md:w-96 border-r border-neutral-800 flex flex-col overflow-hidden ${selectedGroup !== null ? "hidden md:flex" : "flex"}`}>
+      <div className={`w-full md:w-80 border-r border-neutral-800 flex flex-col overflow-hidden ${selectedGroup !== null ? "hidden md:flex" : "flex"}`}>
         <div className="px-3 py-2 border-b border-neutral-800 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex gap-1 overflow-x-auto">
               {(["all", "hot", "warm", "cold", "new"] as const).map(f => (
-                <button key={f} onClick={() => { setFilter(f); setSelectedGroup(null); setSelectedUserId(null); }}
+                <button key={f} onClick={() => { setFilter(f); setSelectedGroup(null); }}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors whitespace-nowrap ${filter === f ? "bg-neutral-700 text-white" : "text-neutral-500 hover:text-neutral-300"}`}>
                   {f === "all" ? `Vse (${uniqueCounts.all})` : f === "hot" ? `🔥${uniqueCounts.hot}` : f === "warm" ? `⚡${uniqueCounts.warm}` : f === "cold" ? `❄️${uniqueCounts.cold}` : `🌱${uniqueCounts.new}`}
                 </button>
@@ -362,34 +401,34 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
           {filteredGroups.map(group => {
             const cfg = STATUS_CONFIG[group.bestStatus];
             const isSelected = selectedGroup?.toLowerCase() === group.name.toLowerCase();
+            const lastMsg = group.sessions.reduce((best, s) => {
+              if (s.lastActivity && (!best || s.lastActivity > best)) return s.lastActivity;
+              return best;
+            }, "" as string);
             return (
-              <button key={group.name} onClick={() => handleSelectGroup(group)} data-testid={`button-select-group-${group.name}`}
-                className={`w-full text-left px-4 py-3 border-b border-neutral-800/50 hover:bg-neutral-800/40 transition-colors ${isSelected ? "bg-neutral-800" : ""}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>
-                      {group.name[0]?.toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
+              <button key={group.name} onClick={() => { setSelectedGroup(group.name); setShowProfile(false); }}
+                data-testid={`button-select-group-${group.name}`}
+                className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/50 hover:bg-neutral-800/40 transition-colors ${isSelected ? "bg-neutral-800" : ""}`}>
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+                    {group.name[0]?.toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <p className="font-semibold text-sm truncate">{group.name}</p>
                         {group.sessions.length > 1 && (
-                          <span className="text-[9px] bg-neutral-700 text-neutral-300 px-1.5 py-0.5 rounded-full font-bold shrink-0">
-                            {group.sessions.length}x
-                          </span>
+                          <span className="text-[8px] bg-neutral-700 text-neutral-400 px-1 py-0.5 rounded-full font-bold shrink-0">{group.sessions.length}x</span>
                         )}
                       </div>
-                      <p className="text-[10px] text-neutral-500">
-                        {group.totalMessages} zprav · {group.totalConversations} konverzaci
-                        {group.lastActivity && (
-                          <> · {formatDistanceToNow(new Date(group.lastActivity), { addSuffix: true, locale: cs })}</>
-                        )}
-                      </p>
+                      {lastMsg && (
+                        <span className="text-[9px] text-neutral-600 shrink-0 ml-1">
+                          {formatDistanceToNow(new Date(lastMsg), { addSuffix: false, locale: cs })}
+                        </span>
+                      )}
                     </div>
+                    <p className="text-[11px] text-neutral-500 truncate mt-0.5">{group.totalMessages} zprav</p>
                   </div>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>
-                    {group.bestProfile?.statusLabel || "Novy"}
-                  </span>
                 </div>
               </button>
             );
@@ -401,115 +440,40 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
       <div className={`flex-1 flex flex-col overflow-hidden ${selectedGroup === null ? "hidden md:flex" : "flex"}`}>
         {!selectedGroupData ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-3">
-            <div className="text-4xl">👥</div>
+            <div className="text-4xl">💬</div>
             <p className="text-neutral-500 text-sm">Vyber zakaznika ze seznamu</p>
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="sticky top-0 border-b border-neutral-800 px-4 py-2 bg-neutral-950/95 backdrop-blur flex items-center justify-between z-10">
-              <div className="flex items-center gap-2">
-                <button onClick={handleBack} className="md:hidden text-neutral-500 hover:text-white text-sm">←</button>
-                <p className="font-bold text-sm">{selectedGroupData.name}</p>
-                {selectedGroupData.sessions.length > 1 && (
-                  <span className="text-[9px] bg-neutral-700 text-neutral-300 px-1.5 py-0.5 rounded-full font-bold">
-                    {selectedGroupData.sessions.length} relaci
-                  </span>
-                )}
-                <span className="text-[10px] text-neutral-500">
-                  {selectedGroupData.totalMessages} zprav · {selectedGroupData.totalConversations} konverzaci
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex bg-neutral-800 rounded-lg overflow-hidden">
-                  <button onClick={() => setViewMode("profile")} data-testid="button-view-profile"
-                    className={`text-[10px] px-2.5 py-1.5 font-bold transition-colors ${viewMode === "profile" ? "bg-emerald-600 text-white" : "text-neutral-400 hover:text-white"}`}>
-                    Profil
-                  </button>
-                  <button onClick={() => setViewMode("conversations")} data-testid="button-view-conversations"
-                    className={`text-[10px] px-2.5 py-1.5 font-bold transition-colors ${viewMode === "conversations" ? "bg-emerald-600 text-white" : "text-neutral-400 hover:text-white"}`}>
-                    Zpravy
-                  </button>
+            <div className="border-b border-neutral-800 px-4 py-2 bg-neutral-900/80 backdrop-blur flex items-center justify-between z-10">
+              <div className="flex items-center gap-3">
+                <button onClick={() => { setSelectedGroup(null); setShowProfile(false); }} className="md:hidden text-neutral-500 hover:text-white text-sm" data-testid="button-back">←</button>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${STATUS_CONFIG[selectedGroupData.bestStatus].bg} ${STATUS_CONFIG[selectedGroupData.bestStatus].border} ${STATUS_CONFIG[selectedGroupData.bestStatus].text}`}>
+                  {selectedGroupData.name[0]?.toUpperCase()}
                 </div>
-                {viewMode === "profile" && (
-                  <button onClick={() => {
-                    for (const s of selectedGroupData.sessions) analyzeMut.mutate(s.id);
-                  }} disabled={analyzingId !== null} data-testid="button-analyze-user"
-                    className="text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-bold">
-                    {analyzingId !== null ? "⏳..." : "🧠 Analyzovat"}
-                  </button>
-                )}
+                <div>
+                  <p className="font-bold text-sm leading-tight">{selectedGroupData.name}</p>
+                  <p className="text-[10px] text-neutral-500">{selectedGroupData.totalMessages} zprav · {selectedGroupData.bestProfile?.statusLabel || "Novy"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => { for (const s of selectedGroupData.sessions) analyzeMut.mutate(s.id); }}
+                  disabled={analyzingId !== null} data-testid="button-analyze-user"
+                  className="text-[10px] bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-300 px-2.5 py-1.5 rounded-lg font-bold transition-colors">
+                  {analyzingId !== null ? "⏳" : "🧠"}
+                </button>
+                <button onClick={() => setShowProfile(!showProfile)} data-testid="button-toggle-profile"
+                  className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-colors ${showProfile ? "bg-emerald-600 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300"}`}>
+                  {showProfile ? "💬 Chat" : "📋 Profil"}
+                </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
-              {viewMode === "conversations" ? (
-                <ConversationViewer userIds={selectedGroupData.sessions.map(s => s.id)} onBack={() => setViewMode("profile")} />
-              ) : !selectedGroupData.bestProfile ? (
-                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center gap-3">
-                  <p className="text-neutral-500 text-sm">Neanalyzovan</p>
-                  <button onClick={() => {
-                    for (const s of selectedGroupData.sessions) analyzeMut.mutate(s.id);
-                  }} className="bg-emerald-600 text-white px-5 py-2 rounded-xl font-bold text-sm">Spustit analyzu</button>
-                </div>
-              ) : (
-                <div className="p-4 space-y-4">
-                  {(() => {
-                    const p = selectedGroupData.bestProfile!;
-                    const cfg = STATUS_CONFIG[p.status];
-                    return (<>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
-                        <span className="text-xs text-neutral-500">Potencial: <strong className={p.buyingPotential === "vysoký" ? "text-red-400" : p.buyingPotential === "střední" ? "text-orange-400" : "text-blue-400"}>{p.buyingPotential}</strong></span>
-                      </div>
-                      <div><div className="flex justify-between text-[10px] text-neutral-500 mb-1"><span>Engagement</span><span className="font-bold">{p.engagementScore}%</span></div><ScoreBar score={p.engagementScore} /></div>
-                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">📋 Profil</p>
-                        <p className="text-sm text-neutral-300">{p.summary}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎭 Osobnost</p>
-                          <div className="flex flex-wrap gap-1">{p.personality.map((t, i) => <span key={i} className="text-[10px] bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded">{t}</span>)}</div>
-                        </div>
-                        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">❤️ Zajmy</p>
-                          <div className="flex flex-wrap gap-1">{p.interests.map((t, i) => <span key={i} className="text-[10px] bg-pink-500/20 border border-pink-500/30 text-pink-400 px-1.5 py-0.5 rounded">{t}</span>)}</div>
-                        </div>
-                      </div>
-                      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
-                        <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">💡 Doporucena akce</p>
-                        <p className="text-sm text-emerald-300">{p.nextAction}</p>
-                      </div>
-                      {p.suggestedMessages.length > 0 && (
-                        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">✍️ Navrhovane zpravy</p>
-                          {p.suggestedMessages.map((msg, i) => (
-                            <div key={i} className="flex items-start justify-between gap-1 bg-neutral-800/60 rounded-lg px-2 py-2 mb-1">
-                              <p className="text-xs text-white">{msg}</p>
-                              <CopyButton text={msg} />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {p.contentIdeas.length > 0 && (
-                        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎬 Content napady</p>
-                          {p.contentIdeas.map((idea, i) => (
-                            <div key={i} className="flex items-start gap-1 mb-1"><span className="text-pink-500 text-xs">→</span><p className="text-xs text-neutral-300">{idea}</p></div>
-                          ))}
-                        </div>
-                      )}
-                      {p.warnings.length > 0 && (
-                        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">⚠️ Varovani</p>
-                          {p.warnings.map((w, i) => <p key={i} className="text-xs text-red-300">{w}</p>)}
-                        </div>
-                      )}
-                    </>);
-                  })()}
-                </div>
-              )}
-            </div>
+            {showProfile ? (
+              <ProfilePanel group={selectedGroupData} analyzeMut={analyzeMut} analyzingId={analyzingId} />
+            ) : (
+              <ChatStream userIds={selectedGroupData.sessions.map(s => s.id)} />
+            )}
           </div>
         )}
       </div>
