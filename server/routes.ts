@@ -110,6 +110,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.status(201).json(user);
   });
 
+  app.post("/api/users/login", async (req, res) => {
+    const { chatCode } = req.body;
+    if (!chatCode?.trim()) return res.status(400).json({ message: "Kód je povinný" });
+    const user = await storage.getUserByChatCode(chatCode.trim());
+    if (!user) return res.status(404).json({ message: "Neplatný kód" });
+    res.json(user);
+  });
+
   app.get(api.users.get.path, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });

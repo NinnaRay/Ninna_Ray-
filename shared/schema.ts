@@ -6,6 +6,7 @@ import { sql } from "drizzle-orm";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  chatCode: text("chat_code").unique(),
   isPremium: boolean("is_premium").default(false),
   messageCount: integer("message_count").default(0).notNull(),
   aiProfile: jsonb("ai_profile"),
