@@ -406,13 +406,13 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
       }
 
       const transcript = allMessages
-        .slice(-150)
+        .slice(-200)
         .map(m => `${m.role === "user" ? user.name : "Ninna"}: ${m.content}`)
         .join("\n");
 
       const analysisPrompt = `Jsi senior strategický analytik pro OnlyFans agenturu. Tvým úkolem je vytvořit KOMPLEXNÍ profil zákazníka "${user.name}" na základě:
 
-1) KONVERZACE se zákazníkem (posledních max 150 zpráv):
+1) KONVERZACE se zákazníkem (posledních max 200 zpráv):
 ${transcript}
 
 2) Tvoje EXPERTNÍ ZNALOSTI aktuálních trendů na OnlyFans a sociálních sítích:
