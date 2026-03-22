@@ -42,9 +42,12 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - Generates profiles: status (hot/warm/cold/new), engagement score, personality traits, interests, buying potential
 - Provides actionable recommendations: next action, suggested messages, content ideas, warnings
 - Batch analysis: analyze all users at once
+- **User Grouping**: Users with the same name are grouped together in the Customers tab. Each group shows aggregated stats and can be expanded to see individual sessions. Each session has a "Profil" (AI profile) and "Zpravy" (conversations/messages) view.
+- **Conversation Viewer**: Managers can view full conversation history for any user session, with chat-bubble UI showing user/assistant messages.
+- **Search**: Filter users by name with a search input in the Customers tab.
 - **Trend Scanner**: AI analyzes agency data and recommends content strategy, promotion platforms, weekly plan
 - **Broadcast**: Send message to all conversations at once
-- Endpoints: `POST /api/manager/analyze/:userId`, `GET /api/manager/overview`, `POST /api/manager/analyze-all`, `POST /api/manager/trends`, `POST /api/manager/broadcast`
+- Endpoints: `POST /api/manager/analyze/:userId`, `GET /api/manager/overview`, `POST /api/manager/analyze-all`, `POST /api/manager/trends`, `POST /api/manager/broadcast`, `GET /api/manager/users/:userId/conversations`
 
 ### Content Vault
 - Upload photos/videos/audio content with tags and categories
