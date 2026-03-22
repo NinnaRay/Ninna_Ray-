@@ -218,18 +218,18 @@ function ChatStream({ userIds }: { userIds: number[] }) {
     }
   }, [convs]);
 
-  if (isLoading) return <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">Nacitam zpravy...</div>;
+  if (isLoading) return <div className="p-6 text-center text-neutral-500 text-sm">Nacitam zpravy...</div>;
 
   const allMessages = (convs || []).flatMap(conv =>
     conv.messages.map(msg => ({ ...msg, convTitle: conv.title }))
   ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-  if (allMessages.length === 0) return <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">Zadne zpravy</div>;
+  if (allMessages.length === 0) return <div className="p-6 text-center text-neutral-500 text-sm">Zadne zpravy</div>;
 
   let lastDate = "";
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5" data-testid="chat-stream">
+    <div className="px-4 py-3 space-y-1.5" data-testid="chat-stream">
       {allMessages.map((msg, idx) => {
         const msgDate = new Date(msg.createdAt).toLocaleDateString("cs-CZ", { day: "numeric", month: "long", year: "numeric" });
         const showDate = msgDate !== lastDate;
@@ -268,8 +268,8 @@ function ChatStream({ userIds }: { userIds: number[] }) {
 function ProfilePanel({ group, analyzeMut, analyzingId }: { group: UserGroup; analyzeMut: any; analyzingId: number | null }) {
   if (!group.bestProfile) {
     return (
-      <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-8 text-center gap-3">
-        <p className="text-neutral-500 text-sm">Neanalyzovan</p>
+      <div className="p-6 text-center">
+        <p className="text-neutral-500 text-sm mb-3">Neanalyzovan</p>
         <button onClick={() => { for (const s of group.sessions) analyzeMut.mutate(s.id); }}
           data-testid="button-run-analysis"
           className="bg-emerald-600 text-white px-5 py-2 rounded-xl font-bold text-sm">Spustit analyzu</button>
@@ -279,7 +279,7 @@ function ProfilePanel({ group, analyzeMut, analyzingId }: { group: UserGroup; an
   const p = group.bestProfile;
   const cfg = STATUS_CONFIG[p.status];
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+    <div className="p-4 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
         <span className="text-xs text-neutral-500">Potencial: <strong className={p.buyingPotential === "vysoký" ? "text-red-400" : p.buyingPotential === "střední" ? "text-orange-400" : "text-blue-400"}>{p.buyingPotential}</strong></span>
@@ -334,7 +334,6 @@ function ProfilePanel({ group, analyzeMut, analyzingId }: { group: UserGroup; an
 
 function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<typeof useQueryClient> }) {
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [showProfile, setShowProfile] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
   const [filter, setFilter] = useState<"all" | "hot" | "warm" | "cold" | "new">("all");
@@ -406,7 +405,7 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
               return best;
             }, "" as string);
             return (
-              <button key={group.name} onClick={() => { setSelectedGroup(group.name); setShowProfile(true); }}
+              <button key={group.name} onClick={() => setSelectedGroup(group.name)}
                 data-testid={`button-select-group-${group.name}`}
                 className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/50 hover:bg-neutral-800/40 transition-colors ${isSelected ? "bg-neutral-800" : ""}`}>
                 <div className="flex items-center gap-2.5">
@@ -440,40 +439,38 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
       <div className={`flex-1 flex flex-col overflow-hidden ${selectedGroup === null ? "hidden md:flex" : "flex"}`}>
         {!selectedGroupData ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-3">
-            <div className="text-4xl">💬</div>
+            <div className="text-4xl">👥</div>
             <p className="text-neutral-500 text-sm">Vyber zakaznika ze seznamu</p>
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="border-b border-neutral-800 px-4 py-2 bg-neutral-900/80 backdrop-blur flex items-center justify-between z-10">
               <div className="flex items-center gap-3">
-                <button onClick={() => { setSelectedGroup(null); setShowProfile(true); }} className="md:hidden text-neutral-500 hover:text-white text-sm" data-testid="button-back">←</button>
+                <button onClick={() => setSelectedGroup(null)} className="md:hidden text-neutral-500 hover:text-white text-sm" data-testid="button-back">←</button>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${STATUS_CONFIG[selectedGroupData.bestStatus].bg} ${STATUS_CONFIG[selectedGroupData.bestStatus].border} ${STATUS_CONFIG[selectedGroupData.bestStatus].text}`}>
                   {selectedGroupData.name[0]?.toUpperCase()}
                 </div>
                 <div>
                   <p className="font-bold text-sm leading-tight">{selectedGroupData.name}</p>
-                  <p className="text-[10px] text-neutral-500">{selectedGroupData.totalMessages} zprav · {selectedGroupData.bestProfile?.statusLabel || "Novy"}</p>
+                  <p className="text-[10px] text-neutral-500">{selectedGroupData.totalMessages} zprav · {selectedGroupData.totalConversations} konverzaci</p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => { for (const s of selectedGroupData.sessions) analyzeMut.mutate(s.id); }}
-                  disabled={analyzingId !== null} data-testid="button-analyze-user"
-                  className="text-[10px] bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-300 px-2.5 py-1.5 rounded-lg font-bold transition-colors">
-                  {analyzingId !== null ? "⏳" : "🧠"}
-                </button>
-                <button onClick={() => setShowProfile(!showProfile)} data-testid="button-toggle-chat"
-                  className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-colors ${!showProfile ? "bg-emerald-600 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300"}`}>
-                  {showProfile ? "💬 Zpravy" : "📋 Profil"}
-                </button>
-              </div>
+              <button onClick={() => { for (const s of selectedGroupData.sessions) analyzeMut.mutate(s.id); }}
+                disabled={analyzingId !== null} data-testid="button-analyze-user"
+                className="text-[10px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-bold transition-colors">
+                {analyzingId !== null ? "⏳ Analyzuji..." : "🧠 Analyzovat"}
+              </button>
             </div>
 
-            {showProfile ? (
+            <div className="flex-1 overflow-y-auto">
               <ProfilePanel group={selectedGroupData} analyzeMut={analyzeMut} analyzingId={analyzingId} />
-            ) : (
-              <ChatStream userIds={selectedGroupData.sessions.map(s => s.id)} />
-            )}
+              <div className="border-t border-neutral-800">
+                <div className="px-4 py-3 bg-neutral-900/60">
+                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">💬 Historie konverzaci</p>
+                </div>
+                <ChatStream userIds={selectedGroupData.sessions.map(s => s.id)} />
+              </div>
+            </div>
           </div>
         )}
       </div>
