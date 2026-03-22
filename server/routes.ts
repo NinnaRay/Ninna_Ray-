@@ -533,6 +533,35 @@ Vrať JSON s tímto přesným formátem (bez markdown, jen čistý JSON):
     }
   });
 
+  app.post("/api/manager/users/bulk-conversations", requireOwner, async (req, res) => {
+    try {
+      const { userIds } = req.body;
+      if (!Array.isArray(userIds)) return res.status(400).json({ message: "userIds required" });
+      const allConvs: any[] = [];
+      for (const uid of userIds) {
+        const convs = await storage.getConversationsByUser(uid);
+        for (const conv of convs) {
+          const msgs = await storage.getMessagesByConversation(conv.id);
+          allConvs.push({
+            id: conv.id,
+            title: conv.title,
+            manualMode: conv.manualMode,
+            assignedAgent: conv.assignedAgent,
+            createdAt: conv.createdAt,
+            messageCount: msgs.length,
+            lastMessage: msgs.length > 0 ? msgs[msgs.length - 1] : null,
+            messages: msgs,
+          });
+        }
+      }
+      allConvs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      res.json(allConvs);
+    } catch (err) {
+      console.error("Bulk conversations error:", err);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
   // ─── Trend Scanner (owner only) ───────────────────────────────────────────
 
   app.post("/api/manager/trends", requireOwner, async (_req, res) => {
