@@ -34,34 +34,40 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 
 ### Database
 - **PostgreSQL** via Drizzle ORM
-- **Tables**: `users` (with `aiProfile` jsonb, `aiProfileUpdatedAt`), `conversations` (with `manualMode`, `assignedAgent`), `messages`, `content_items` (vault)
+- **Tables**: `users` (with `aiProfile` jsonb, `aiProfileUpdatedAt`), `conversations` (with `manualMode`, `assignedAgent`), `messages`, `content_items` (vault), `manager_actions` (action queue), `manager_log` (engine activity log)
 - **Migrations**: `npx drizzle-kit push`
 
-### AI Manager System
-- **Autonomous AI agent** — not just analysis but ACTIONABLE INSTRUCTIONS ready to execute
-- GPT-4o analyzes last 200 messages + vault photos + OnlyFans trend knowledge
-- Generates action-based profiles with:
-  - Status (hot/warm/cold/new), engagement score, strategy (build/sell/hook)
-  - **mainDriver**: single directive that drives the whole conversation
-  - **actionQueue**: ready-to-send messages with timing, purpose (build/sell/hook), and vault photo assignments
-  - **styleNotes**: communication style adapted from warnings (not displayed as warnings)
-  - **trendInsights**: relevant trends for this specific customer
-- Vault photos are passed to analysis prompt — AI categorizes them and assigns to specific messages
-- Strategy logic: high engagement → SELL (monetize), medium → BUILD (relationship), low → HOOK (re-engage)
-- **User Grouping**: Users grouped by normalized name (diacritics stripped, case-insensitive). Sidebar shows engagement %, strategy badge, main driver preview.
-- **Conversation Viewer**: Full chat history below profile in one scrollable view
-- **Search**: Filter users by name
-- **Trend Scanner**: Agency-wide content strategy
-- **Broadcast**: Send to all conversations
+### AI Manager System — Autonomous Engine
+- **Fully autonomous** — runs on 10-minute interval, analyzes ALL users, generates actions without user input
+- **Engine file**: `server/manager-engine.ts` — starts on server boot, runs `runFullScan()` every 10 min
+- **Auto-reanalyze**: After each chat message, triggers re-analysis if profile > 5 min old
+- **Adaptive personalization** — builds persistent individual profiles per customer:
+  - `communicationPatterns`: msg length, response speed, emoji usage, tone, peak hours
+  - `emotionalTriggers`: what makes them respond, buy, or disengage
+  - `whatWorks` / `whatFails`: learned from interaction history, preserved across analyses
+  - `relationshipStage`: nový/budování/stabilní/monetizace/reaktivace
+  - `nextMilestone`: what's the next goal for this relationship
+- **Previous profile as memory**: Each analysis receives the previous profile so AI builds on it, not from scratch
+- **Strictly actionable output**: Every analytical block (personality, interests, warnings) must convert to concrete messages with timing, purpose, and photo assignments
+- **No generic responses**: AI must personalize based on conversation history, style, and emotional triggers
+- **Action queue persisted**: Actions stored in `manager_actions` DB table with status tracking (pending/done)
+- Strategy logic: high engagement → SELL, medium → BUILD, low → HOOK
+- **UI Tabs**: Přehled (overview with engine status, stats, pending/done actions, logs), Zákazníci, Vault, Trendy, Broadcast
 - Selected user persists across tab switches (state lifted to parent)
-- Endpoints: `POST /api/manager/analyze/:userId`, `GET /api/manager/overview`, `POST /api/manager/analyze-all`, `POST /api/manager/trends`, `POST /api/manager/broadcast`, `GET /api/manager/users/:userId/conversations`, `POST /api/manager/users/bulk-conversations`
 
 ### Content Vault
 - Upload photos/videos/audio content with tags and categories
 - Content stored in `uploads/` directory, metadata in `content_items` table
-- Send content directly to customer conversations
+- AI automatically categorizes photos (teasing/cute/explicit/casual) and assigns to scenarios
 - Track usage count per content item
-- Endpoints: `GET /api/vault/items`, `POST /api/vault/upload`, `DELETE /api/vault/items/:id`, `POST /api/vault/items/:id/send/:conversationId`
+
+### Key API Endpoints
+- `POST /api/manager/analyze/:userId` — trigger manual analysis (uses engine)
+- `GET /api/manager/engine-status` — engine running state, last/next scan, recent logs
+- `GET /api/manager/actions` — list pending/done actions
+- `PATCH /api/manager/actions/:id` — update action status
+- `GET /api/manager/logs` — engine activity log
+- `GET /api/manager/overview`, `POST /api/manager/analyze-all`, `POST /api/manager/trends`, `POST /api/manager/broadcast`
 
 ### Deployment
 - **Target**: Autoscale
@@ -78,23 +84,22 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - `AGENT_PASSWORD` — Password for agent login (default: `agent2025`)
 - `OWNER_PASSWORD` — Password for owner login (default: `owner2025`)
 
-## Future: Payments (Stripe)
-
-Stripe integration was offered but not yet set up. User dismissed the Replit Stripe connector. When ready, either:
-1. Re-propose the Replit Stripe integration connector
-2. Or ask user for Stripe API keys to store as secrets
-
-Planned features: PPV content, tips, content store, revenue dashboard.
-
 ## Key Files
 
 - `server/routes.ts` — All API routes (auth, chat, agent, admin, manager)
-- `server/index.ts` — Express setup, session config, production/dev mode
-- `server/storage.ts` — Database CRUD operations
+- `server/manager-engine.ts` — Autonomous AI manager engine (scan, analyze, action queue)
+- `server/index.ts` — Express setup, session config, engine startup
+- `server/storage.ts` — Database CRUD operations (incl. manager_actions, manager_log)
 - `server/static.ts` — Production static file serving
-- `shared/schema.ts` — Drizzle schema + Zod types
-- `client/src/pages/Landing.tsx` — Entry page
-- `client/src/pages/Chat.tsx` — Customer chat UI
-- `client/src/pages/AgentDashboard.tsx` — Agent takeover interface
-- `client/src/pages/AdminDashboard.tsx` — Owner stats/users/conversations
-- `client/src/pages/ManagerDashboard.tsx` — AI Manager autonomous analysis
+- `shared/schema.ts` — Drizzle schema + Zod types (incl. managerActions, managerLog tables)
+- `client/src/pages/ManagerDashboard.tsx` — AI Manager dashboard (overview, customers, vault, trends, broadcast)
+
+## Critical Architecture Notes
+
+- `normalizeName()` = trim + lowercase + NFD + strip diacritics — "Žerik" groups with "Zerik"
+- Sidebar badge uses `STATUS_CONFIG[bestStatus].label` (short: "🔥 Horký") NOT `aiProfile.statusLabel`
+- Backend vault upload: field `files` (not `file`), uses `upload.array("files", 50)`
+- Analysis: last 200 messages (slice(-200)), includes vault photo list + previous profile as memory context
+- Old profiles (without `actionQueue`) fall back to showing `suggestedMessages`
+- Auth: owner login `POST /api/auth/login` with `{ password: "owner2025", role: "owner", username: "Manager" }`
+- `package.json` uses `"type": "module"` — CommonJS scripts need `.cjs` extension

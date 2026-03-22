@@ -12,6 +12,14 @@ type ActionItem = {
   photoNote: string | null;
 };
 
+type CommunicationPatterns = {
+  msgLength?: string;
+  responseSpeed?: string;
+  usesEmoji?: boolean;
+  tone?: string;
+  peakHours?: string;
+};
+
 type AiProfile = {
   status: "hot" | "warm" | "cold" | "new";
   statusLabel: string;
@@ -21,6 +29,10 @@ type AiProfile = {
   summary: string;
   personality: string[];
   interests: string[];
+  emotionalTriggers?: string[];
+  communicationPatterns?: CommunicationPatterns;
+  whatWorks?: string[];
+  whatFails?: string[];
   mainDriver?: string;
   nextAction?: string;
   actionQueue?: ActionItem[];
@@ -29,6 +41,8 @@ type AiProfile = {
   styleNotes?: string;
   trendInsights?: string[];
   warnings?: string[];
+  relationshipStage?: string;
+  nextMilestone?: string;
   lastAnalyzed: string;
 };
 
@@ -323,6 +337,7 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: M
                       {p && <span className="text-[10px] text-neutral-600">· {p.engagementScore}%</span>}
                       {stratLabel && <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${p?.strategy === "sell" ? "bg-yellow-500/20 text-yellow-400" : p?.strategy === "hook" ? "bg-purple-500/20 text-purple-400" : "bg-blue-500/20 text-blue-400"}`}>{stratLabel}</span>}
                     </div>
+                    {p?.relationshipStage && <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${p.relationshipStage === "monetizace" ? "bg-yellow-500/15 text-yellow-400" : p.relationshipStage === "stabilní" ? "bg-emerald-500/15 text-emerald-400" : "bg-neutral-700 text-neutral-400"}`}>{p.relationshipStage}</span>}
                     {p?.mainDriver && <p className="text-[10px] text-neutral-400 truncate mt-0.5">{p.mainDriver}</p>}
                   </div>
                 </div>
@@ -392,6 +407,54 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: M
                         {p.personality.map((t, i) => <span key={i} className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded">{t}</span>)}
                         {p.interests.map((t, i) => <span key={`int-${i}`} className="text-[9px] bg-pink-500/15 text-pink-400 px-1.5 py-0.5 rounded">{t}</span>)}
                       </div>
+                    </div>
+
+                    {p.relationshipStage && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-400">
+                          {p.relationshipStage === "nový" ? "🌱" : p.relationshipStage === "budování" ? "🤝" : p.relationshipStage === "stabilní" ? "💎" : p.relationshipStage === "monetizace" ? "💰" : "🎣"} {p.relationshipStage}
+                        </span>
+                        {p.nextMilestone && <span className="text-[10px] text-neutral-400">→ {p.nextMilestone}</span>}
+                      </div>
+                    )}
+
+                    {p.communicationPatterns && (
+                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1.5">📡 Komunikační vzory</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {p.communicationPatterns.tone && <span className="text-[9px] bg-violet-500/15 text-violet-400 px-1.5 py-0.5 rounded">🎭 {p.communicationPatterns.tone}</span>}
+                          {p.communicationPatterns.msgLength && <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded">📝 {p.communicationPatterns.msgLength}</span>}
+                          {p.communicationPatterns.responseSpeed && <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded">⚡ {p.communicationPatterns.responseSpeed}</span>}
+                          {p.communicationPatterns.usesEmoji !== undefined && <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded">{p.communicationPatterns.usesEmoji ? "😊 emoji" : "🚫 bez emoji"}</span>}
+                          {p.communicationPatterns.peakHours && <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded">🕐 {p.communicationPatterns.peakHours}</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    {(p.emotionalTriggers || []).length > 0 && (
+                      <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1.5">⚡ Emoční spouštěče</p>
+                        <div className="space-y-1">
+                          {(p.emotionalTriggers || []).map((t, i) => (
+                            <p key={i} className="text-xs text-red-200">→ {t}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {(p.whatWorks || []).length > 0 && (
+                        <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-2.5">
+                          <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest mb-1">✅ Funguje</p>
+                          {(p.whatWorks || []).map((w, i) => <p key={i} className="text-[10px] text-emerald-200">• {w}</p>)}
+                        </div>
+                      )}
+                      {(p.whatFails || []).length > 0 && (
+                        <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-2.5">
+                          <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest mb-1">❌ Nefunguje</p>
+                          {(p.whatFails || []).map((w, i) => <p key={i} className="text-[10px] text-red-200">• {w}</p>)}
+                        </div>
+                      )}
                     </div>
 
                     {p.styleNotes && (
@@ -759,9 +822,164 @@ function BroadcastTab() {
 
 // ─── Main Dashboard ──────────────────────────────────────────────────────────
 
+type EngineStatus = {
+  isRunning: boolean;
+  lastFullScan: string | null;
+  nextScan: string | null;
+  recentLogs: { time: string; event: string; detail: string }[];
+};
+
+type ManagerActionRecord = {
+  id: number;
+  userId: number | null;
+  type: string;
+  status: string;
+  message: string | null;
+  photoId: number | null;
+  purpose: string | null;
+  timing: string | null;
+  result: string | null;
+  executedAt: string | null;
+  createdAt: string;
+};
+
+function OverviewTab({ users }: { users: ManagerUser[] }) {
+  const { data: engineStatus } = useQuery<EngineStatus>({
+    queryKey: ["/api/manager/engine-status"],
+    refetchInterval: 10000,
+    queryFn: () => fetch("/api/manager/engine-status").then(r => r.json()),
+  });
+
+  const { data: actions = [] } = useQuery<ManagerActionRecord[]>({
+    queryKey: ["/api/manager/actions"],
+    refetchInterval: 15000,
+    queryFn: () => fetch("/api/manager/actions").then(r => r.json()),
+  });
+
+  const groups = groupUsers(users);
+  const totalMessages = users.reduce((s, u) => s + u.totalMessages, 0);
+  const analyzed = users.filter(u => u.aiProfile).length;
+  const hotCount = groups.filter(g => g.bestStatus === "hot").length;
+  const warmCount = groups.filter(g => g.bestStatus === "warm").length;
+  const coldCount = groups.filter(g => g.bestStatus === "cold").length;
+  const avgEngagement = users.filter(u => u.aiProfile).reduce((s, u) => s + ((u.aiProfile as any)?.engagementScore || 0), 0) / (analyzed || 1);
+
+  const pendingActions = actions.filter(a => a.status === "pending");
+  const doneActions = actions.filter(a => a.status === "done");
+
+  const purposeConfig: Record<string, { icon: string; label: string; cls: string }> = {
+    build: { icon: "🤝", label: "BUILD", cls: "bg-blue-500/20 border-blue-500/30 text-blue-400" },
+    sell: { icon: "💰", label: "SELL", cls: "bg-yellow-500/20 border-yellow-500/30 text-yellow-400" },
+    hook: { icon: "🎣", label: "HOOK", cls: "bg-purple-500/20 border-purple-500/30 text-purple-400" },
+  };
+
+  const userNameMap = new Map(users.map(u => [u.id, u.name]));
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className={`flex items-center gap-3 p-3 rounded-xl border ${engineStatus?.isRunning ? "bg-amber-500/10 border-amber-500/30" : "bg-emerald-500/10 border-emerald-500/30"}`}>
+        <div className={`w-3 h-3 rounded-full ${engineStatus?.isRunning ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
+        <div className="flex-1">
+          <p className={`text-sm font-bold ${engineStatus?.isRunning ? "text-amber-300" : "text-emerald-300"}`}>
+            {engineStatus?.isRunning ? "⏳ AI Manager analyzuje..." : "✓ AI Manager aktivní"}
+          </p>
+          <p className="text-[10px] text-neutral-400">
+            {engineStatus?.lastFullScan ? `Poslední scan: ${formatDistanceToNow(new Date(engineStatus.lastFullScan), { locale: cs, addSuffix: true })}` : "První scan se připravuje..."}
+            {engineStatus?.nextScan && ` · Další: ${formatDistanceToNow(new Date(engineStatus.nextScan), { locale: cs, addSuffix: true })}`}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {[
+          { label: "Zákazníci", value: groups.length, icon: "👥" },
+          { label: "Analyzováno", value: `${analyzed}/${users.length}`, icon: "🧠" },
+          { label: "Ø Engagement", value: `${Math.round(avgEngagement)}%`, icon: "📊" },
+          { label: "Zpráv celkem", value: totalMessages, icon: "💬" },
+        ].map((stat, i) => (
+          <div key={i} className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid={`stat-card-${i}`}>
+            <p className="text-lg">{stat.icon}</p>
+            <p className="text-lg font-bold text-white">{stat.value}</p>
+            <p className="text-[10px] text-neutral-500">{stat.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-center">
+          <p className="text-xl font-bold text-red-400">{hotCount}</p>
+          <p className="text-[10px] text-red-300">🔥 Horký</p>
+        </div>
+        <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-3 text-center">
+          <p className="text-xl font-bold text-orange-400">{warmCount}</p>
+          <p className="text-[10px] text-orange-300">⚡ Teplý</p>
+        </div>
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-center">
+          <p className="text-xl font-bold text-blue-400">{coldCount}</p>
+          <p className="text-[10px] text-blue-300">❄️ Studený</p>
+        </div>
+      </div>
+
+      {pendingActions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📨 Čekající akce ({pendingActions.length})</p>
+          {pendingActions.slice(0, 20).map(action => {
+            const pCfg = purposeConfig[action.purpose || "build"] || purposeConfig.build;
+            return (
+              <div key={action.id} data-testid={`pending-action-${action.id}`}
+                className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-neutral-300">{userNameMap.get(action.userId!) || "?"}</span>
+                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pCfg.cls}`}>{pCfg.icon} {pCfg.label}</span>
+                    {action.timing && <span className="text-[10px] text-neutral-500">⏰ {action.timing}</span>}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {action.message && <CopyButton text={action.message} />}
+                  </div>
+                </div>
+                {action.message && <p className="text-sm text-white leading-relaxed">{action.message}</p>}
+                {action.photoId && <p className="text-[10px] text-pink-400">📸 Fotka #{action.photoId}</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {doneActions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">✅ Provedené akce ({doneActions.length})</p>
+          {doneActions.slice(0, 10).map(action => (
+            <div key={action.id} className="bg-neutral-900/50 border border-neutral-800/50 rounded-xl p-2.5 flex items-center gap-2 opacity-70">
+              <span className="text-[10px] text-emerald-400">✓</span>
+              <span className="text-xs text-neutral-300 truncate flex-1">{userNameMap.get(action.userId!) || "?"}: {action.message?.substring(0, 60)}...</span>
+              {action.executedAt && <span className="text-[9px] text-neutral-600">{formatDistanceToNow(new Date(action.executedAt), { locale: cs, addSuffix: true })}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {engineStatus?.recentLogs && engineStatus.recentLogs.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📋 Log AI Manageru</p>
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 max-h-48 overflow-y-auto space-y-1">
+            {engineStatus.recentLogs.slice(-15).reverse().map((log, i) => (
+              <div key={i} className="flex items-start gap-2 text-[10px]">
+                <span className="text-neutral-600 shrink-0">{new Date(log.time).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span>
+                <span className="text-neutral-400">{log.event}</span>
+                {log.detail && <span className="text-neutral-500 truncate">{log.detail}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ManagerDashboard() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<"customers" | "vault" | "trends" | "broadcast">("customers");
+  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast">("overview");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const qc = useQueryClient();
 
@@ -782,6 +1000,7 @@ export default function ManagerDashboard() {
   if (authed === false) return <LoginForm onSuccess={() => { setAuthed(true); window.location.reload(); }} />;
 
   const TABS = [
+    { id: "overview" as const, icon: "🧠", label: "Přehled" },
     { id: "customers" as const, icon: "👥", label: "Zákazníci" },
     { id: "vault" as const, icon: "📦", label: "Vault" },
     { id: "trends" as const, icon: "📊", label: "Trendy" },
@@ -791,12 +1010,13 @@ export default function ManagerDashboard() {
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col">
       <div className="border-b border-neutral-800 bg-neutral-900/80 backdrop-blur px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className="text-xl">🧠</span>
           <div>
             <h1 className="font-bold text-sm leading-none" data-testid="text-dashboard-title">AI Manager</h1>
-            <p className="text-neutral-500 text-[10px]">{users.length} zákazníků</p>
+            <p className="text-neutral-500 text-[10px]">{users.length} zákazníků · autonomní režim</p>
           </div>
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Engine aktivní" />
         </div>
         <button onClick={logout} data-testid="button-logout" className="text-neutral-500 hover:text-white text-xs transition-colors">Odhlásit</button>
       </div>
@@ -815,6 +1035,7 @@ export default function ManagerDashboard() {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
+        {activeTab === "overview" && <OverviewTab users={users} />}
         {activeTab === "customers" && <CustomersTab users={users} qc={qc} selectedGroup={selectedGroup} setSelectedGroup={setSelectedGroup} />}
         {activeTab === "vault" && <VaultTab />}
         {activeTab === "trends" && <TrendsTab />}

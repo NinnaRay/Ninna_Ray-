@@ -44,6 +44,27 @@ export const contentItems = pgTable("content_items", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export const managerActions = pgTable("manager_actions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  status: text("status").default("pending").notNull(),
+  message: text("message"),
+  photoId: integer("photo_id"),
+  purpose: text("purpose"),
+  timing: text("timing"),
+  result: text("result"),
+  executedAt: timestamp("executed_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const managerLog = pgTable("manager_log", {
+  id: serial("id").primaryKey(),
+  event: text("event").notNull(),
+  detail: text("detail"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertConversationSchema = createInsertSchema(conversations).omit({ id: true, createdAt: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
@@ -57,3 +78,5 @@ export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type ContentItem = typeof contentItems.$inferSelect;
 export type InsertContentItem = z.infer<typeof insertContentItemSchema>;
+export type ManagerAction = typeof managerActions.$inferSelect;
+export type ManagerLog = typeof managerLog.$inferSelect;

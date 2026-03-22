@@ -1,6 +1,6 @@
-import { users, conversations, messages, contentItems, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem } from "@shared/schema";
+import { users, conversations, messages, contentItems, managerActions, managerLog, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem, type ManagerAction, type ManagerLog } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, gte } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -25,6 +25,11 @@ export interface IStorage {
   getContentItem(id: number): Promise<ContentItem | undefined>;
   deleteContentItem(id: number): Promise<void>;
   incrementContentUsage(id: number): Promise<void>;
+  createManagerAction(data: { userId: number | null; type: string; message?: string; photoId?: number; purpose?: string; timing?: string }): Promise<ManagerAction>;
+  getManagerActions(since?: Date): Promise<ManagerAction[]>;
+  updateManagerAction(id: number, updates: Partial<{ status: string; result: string; executedAt: Date }>): Promise<void>;
+  addManagerLog(event: string, detail?: string): Promise<void>;
+  getManagerLogs(limit?: number): Promise<ManagerLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -132,6 +137,37 @@ export class DatabaseStorage implements IStorage {
     if (ci) {
       await db.update(contentItems).set({ timesUsed: ci.timesUsed + 1 }).where(eq(contentItems.id, id));
     }
+  }
+
+  async createManagerAction(data: { userId: number | null; type: string; message?: string; photoId?: number; purpose?: string; timing?: string }): Promise<ManagerAction> {
+    const [action] = await db.insert(managerActions).values({
+      userId: data.userId,
+      type: data.type,
+      message: data.message || null,
+      photoId: data.photoId || null,
+      purpose: data.purpose || null,
+      timing: data.timing || null,
+    }).returning();
+    return action;
+  }
+
+  async getManagerActions(since?: Date): Promise<ManagerAction[]> {
+    if (since) {
+      return db.select().from(managerActions).where(gte(managerActions.createdAt, since)).orderBy(desc(managerActions.createdAt));
+    }
+    return db.select().from(managerActions).orderBy(desc(managerActions.createdAt)).limit(200);
+  }
+
+  async updateManagerAction(id: number, updates: Partial<{ status: string; result: string; executedAt: Date }>): Promise<void> {
+    await db.update(managerActions).set(updates).where(eq(managerActions.id, id));
+  }
+
+  async addManagerLog(event: string, detail?: string): Promise<void> {
+    await db.insert(managerLog).values({ event, detail: detail || null });
+  }
+
+  async getManagerLogs(limit = 50): Promise<ManagerLog[]> {
+    return db.select().from(managerLog).orderBy(desc(managerLog.createdAt)).limit(limit);
   }
 }
 

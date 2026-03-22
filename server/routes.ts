@@ -164,7 +164,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.incrementMessageCount(conversation.userId);
       sendToAgency(conversation.userId, content, "user");
 
-      // If manual mode is on, just save and return — agent will reply
+      const userObj = await storage.getUser(conversation.userId);
+      import("./manager-engine").then(m => m.onNewMessage(conversation.userId, userObj?.name || "unknown")).catch(() => {});
+
       if (conversation.manualMode) {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
@@ -370,7 +372,6 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
 
   // ─── AI Manager routes (owner only) ─────────────────────────────────────────
 
-  // Analyze a single user and generate/update their AI profile
   app.post("/api/manager/analyze/:userId", requireOwner, async (req, res) => {
     try {
       const userId = parseInt(req.params.userId);
@@ -379,131 +380,46 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      const convs = await storage.getConversationsByUser(userId);
-      let allMessages: { role: string; content: string }[] = [];
-      for (const conv of convs) {
-        const msgs = await storage.getMessagesByConversation(conv.id);
-        allMessages = allMessages.concat(msgs.map(m => ({ role: m.role, content: m.content })));
-      }
-
-      if (allMessages.length === 0) {
-        const emptyProfile = {
-          status: "new",
-          statusLabel: "Nový",
-          engagementScore: 0,
-          summary: "Zákazník zatím nezaslal žádné zprávy.",
-          personality: [],
-          interests: [],
-          buyingPotential: "neznámý",
-          nextAction: "Počkej na první zprávu.",
-          suggestedMessages: [],
-          contentIdeas: [],
-          warnings: [],
-          lastAnalyzed: new Date().toISOString(),
-        };
-        await storage.updateAiProfile(userId, emptyProfile);
-        return res.json(emptyProfile);
-      }
-
-      const transcript = allMessages
-        .slice(-200)
-        .map(m => `${m.role === "user" ? user.name : "Ninna"}: ${m.content}`)
-        .join("\n");
-
-      // Get vault photos for context
-      const vaultItems = await storage.getAllContentItems();
-      const photoList = vaultItems
-        .filter(item => item.mimeType.startsWith("image") || item.mimeType.startsWith("video"))
-        .map(item => `[ID:${item.id}] "${item.originalName}" (${item.category}${item.tags.length > 0 ? ", tagy: " + item.tags.join(", ") : ""}${item.description ? ", popis: " + item.description : ""})`)
-        .join("\n");
-
-      const analysisPrompt = `Jsi autonomní AI agent řídící OnlyFans konverzace. Tvůj výstup NEJSOU rady ani analýzy - jsou to HOTOVÉ INSTRUKCE k okamžitému provedení.
-
-ZÁKAZNÍK: "${user.name}"
-
-KONVERZACE (posledních max 200 zpráv):
-${transcript}
-
-DOSTUPNÉ FOTKY VE VAULTU:
-${photoList || "(žádné fotky nahrané)"}
-
-TVOJE ZNALOSTI: Použij svoje expertní znalosti OnlyFans trendů, psychologie zákazníků a monetizačních strategií.
-
-═══ PRAVIDLA ═══
-1. NIKDY negeneruj obecné rady. Vždy generuj HOTOVÉ výstupy připravené k odeslání.
-2. Každá navrhovaná zpráva MUSÍ mít: text, timing (kdy odeslat), účel (build/sell/hook), a pokud je to vhodné - ID fotky z vaultu.
-3. Osobnost a zájmy nepiš jako text k zobrazení - převeď je na KONKRÉTNÍ AKCE.
-4. Warning neslou6í k zobrazení - upravi podle něj STYL komunikace ve zprávách.
-5. Metriky řídí strategii:
-   - engagement vysoký (70+) → tlač monetizaci, PPV, custom content
-   - engagement střední (40-69) → buduj vztah, personalizace, intimita
-   - engagement nízký (pod 40) → testuj hooky, provokuj, re-engage
-6. Fotky z vaultu roztřiď podle typu a přiřaď ke konkrétním zprávám.
-7. Navazuj na POSLEDNÍ zprávy v konverzaci - pokračuj přirozeně tam, kde skončil.
-
-DŮLEŽITÉ: statusLabel MUSÍ být POUZE jedno slovo: "Horký", "Teplý", "Studený" nebo "Nový".
-
-Vrať JSON (bez markdown, čistý JSON):
-{
-  "status": "hot|warm|cold|new",
-  "statusLabel": "Horký|Teplý|Studený|Nový",
-  "engagementScore": <0-100>,
-  "buyingPotential": "vysoký|střední|nízký",
-  "strategy": "build|sell|hook",
-  "summary": "<2-3 věty: kdo je ten člověk, co chce, jak s ním komunikovat>",
-  "personality": ["<tag1>", "<tag2>", "<tag3>"],
-  "interests": ["<tag1>", "<tag2>", "<tag3>"],
-  "mainDriver": "<1 věta: co teď dělat a PROČ - tohle řídí celou konverzaci>",
-  "actionQueue": [
-    {
-      "message": "<hotová zpráva k odeslání - přirozená, personalizovaná>",
-      "timing": "<kdy odeslat: 'teď' / 'za 1h' / 'za 3h' / 'dnes večer' / 'zítra ráno'>",
-      "purpose": "build|sell|hook",
-      "photoId": <ID fotky z vaultu nebo null>,
-      "photoNote": "<proč tuto fotku použít, nebo null>"
-    },
-    {
-      "message": "<další zpráva>",
-      "timing": "<timing>",
-      "purpose": "build|sell|hook",
-      "photoId": <ID nebo null>,
-      "photoNote": "<poznámka nebo null>"
-    },
-    {
-      "message": "<další zpráva>",
-      "timing": "<timing>",
-      "purpose": "build|sell|hook",
-      "photoId": <ID nebo null>,
-      "photoNote": "<poznámka nebo null>"
-    },
-    {
-      "message": "<další zpráva - např. PPV nabídka nebo reaktivace>",
-      "timing": "<timing>",
-      "purpose": "build|sell|hook",
-      "photoId": <ID nebo null>,
-      "photoNote": "<poznámka nebo null>"
-    }
-  ],
-  "styleNotes": "<jak komunikovat s tímto zákazníkem - tón, co funguje, čemu se vyhnout - tohle NAHRAZUJE warning>",
-  "trendInsights": [
-    "<konkrétní trend/taktika relevantní pro TOHOTO zákazníka a jak ji použít>"
-  ],
-  "lastAnalyzed": "${new Date().toISOString()}"
-}`;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: analysisPrompt }],
-        response_format: { type: "json_object" },
-      });
-
-      const raw = completion.choices[0]?.message?.content || "{}";
-      const profile = JSON.parse(raw);
-      await storage.updateAiProfile(userId, profile);
-      res.json(profile);
+      const { triggerAnalysis } = await import("./manager-engine");
+      const profile = await triggerAnalysis(userId, user.name);
+      res.json(profile || { status: "new", statusLabel: "Nový", engagementScore: 0, summary: "Žádné zprávy.", actionQueue: [], lastAnalyzed: new Date().toISOString() });
     } catch (err) {
       console.error("AI Manager analyze error:", err);
       res.status(500).json({ message: "Chyba při analýze" });
+    }
+  });
+
+  app.get("/api/manager/engine-status", requireOwner, async (_req, res) => {
+    const { getManagerStatus } = await import("./manager-engine");
+    res.json(getManagerStatus());
+  });
+
+  app.get("/api/manager/actions", requireOwner, async (req, res) => {
+    try {
+      const since = req.query.since ? new Date(req.query.since as string) : undefined;
+      const actions = await storage.getManagerActions(since);
+      res.json(actions);
+    } catch (err) {
+      res.status(500).json({ message: "Chyba" });
+    }
+  });
+
+  app.patch("/api/manager/actions/:id", requireOwner, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.updateManagerAction(id, { ...req.body, executedAt: req.body.status === "done" ? new Date() : undefined });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ message: "Chyba" });
+    }
+  });
+
+  app.get("/api/manager/logs", requireOwner, async (_req, res) => {
+    try {
+      const logs = await storage.getManagerLogs(100);
+      res.json(logs);
+    } catch (err) {
+      res.status(500).json({ message: "Chyba" });
     }
   });
 
