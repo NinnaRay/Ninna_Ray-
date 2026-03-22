@@ -406,33 +406,50 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
       }
 
       const transcript = allMessages
-        .slice(-60)
+        .slice(-150)
         .map(m => `${m.role === "user" ? user.name : "Ninna"}: ${m.content}`)
         .join("\n");
 
-      const analysisPrompt = `Jsi expert na řízení OnlyFans agentury. Analyzuj konverzaci zákazníka se jménem "${user.name}" a vytvoř kompletní profil.
+      const analysisPrompt = `Jsi senior strategický analytik pro OnlyFans agenturu. Tvým úkolem je vytvořit KOMPLEXNÍ profil zákazníka "${user.name}" na základě:
 
-KONVERZACE (posledních max 60 zpráv):
+1) KONVERZACE se zákazníkem (posledních max 150 zpráv):
 ${transcript}
+
+2) Tvoje EXPERTNÍ ZNALOSTI aktuálních trendů na OnlyFans a sociálních sítích:
+- Co aktuálně frčí mezi fanoušky na OnlyFans (typy contentu, formáty, fetiše, interakce)
+- Jak úspěšné kreátorky přitahují a udržují zákazníky
+- Nejlepší praktiky pro PPV, tipy, custom content, sexting
+- Psychologie mužských zákazníků na podobných platformách
+- Jak budovat loajalitu a zvyšovat utrácení
+
+Na základě OBOU zdrojů (konverzace + tvoje znalosti trendů) vytvoř hloubkový profil.
+
+DŮLEŽITÉ pro statusLabel: Použij POUZE jedno z těchto krátkých slov: "Horký", "Teplý", "Studený", "Nový". NIC víc.
 
 Vrať JSON s tímto přesným formátem (bez markdown, jen čistý JSON):
 {
   "status": "hot|warm|cold|new",
-  "statusLabel": "Horký lead|Teplý|Studený|Nový",
+  "statusLabel": "Horký|Teplý|Studený|Nový",
   "engagementScore": <0-100>,
-  "summary": "<2-3 věty o zákazníkovi>",
-  "personality": ["<vlastnost1>", "<vlastnost2>", "<vlastnost3>"],
-  "interests": ["<zájem1>", "<zájem2>"],
+  "summary": "<3-5 vět hloubkový profil zákazníka - jeho chování, motivace, co ho přitahuje, jaký typ interakce preferuje>",
+  "personality": ["<vlastnost1>", "<vlastnost2>", "<vlastnost3>", "<vlastnost4>"],
+  "interests": ["<zájem1>", "<zájem2>", "<zájem3>"],
   "buyingPotential": "vysoký|střední|nízký",
-  "nextAction": "<konkrétní doporučení co teď udělat>",
+  "nextAction": "<konkrétní krok co udělat TEĎ - včetně kontextu proč, založeno na aktuálních trendech>",
   "suggestedMessages": [
-    "<hotová zpráva kterou může Ninna poslat>",
-    "<hotová zpráva 2>",
-    "<hotová zpráva 3>"
+    "<hotová zpráva 1 - personalizovaná pro tohoto zákazníka, přirozená, flirty>",
+    "<hotová zpráva 2 - jiný přístup/téma>",
+    "<hotová zpráva 3 - provokativní nebo zvědavost budící>",
+    "<hotová zpráva 4 - reaktivační nebo PPV nabídka>"
   ],
   "contentIdeas": [
-    "<nápad na content pro tohoto zákazníka>",
-    "<nápad 2>"
+    "<content nápad specifický pro tohoto zákazníka + proč bude fungovat>",
+    "<nápad 2 inspirovaný aktuálními trendy>",
+    "<nápad 3 na PPV nebo custom obsah>"
+  ],
+  "trendInsights": [
+    "<trend/tip z OnlyFans světa relevantní pro tohoto zákazníka>",
+    "<další trend nebo strategie jak ho více zaujmout>"
   ],
   "warnings": ["<varování pokud existuje, jinak prázdné pole>"],
   "lastAnalyzed": "${new Date().toISOString()}"
