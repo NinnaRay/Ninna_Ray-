@@ -3,8 +3,8 @@ import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
-  // User operations
   getUser(id: number): Promise<User | undefined>;
+  getUserByChatCode(chatCode: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   incrementMessageCount(userId: number): Promise<void>;
   getAllUsers(): Promise<User[]>;
@@ -33,8 +33,14 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByChatCode(chatCode: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.chatCode, chatCode.toUpperCase()));
+    return user;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
+    const chatCode = `NINNA-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const [user] = await db.insert(users).values({ ...insertUser, chatCode }).returning();
     return user;
   }
 
