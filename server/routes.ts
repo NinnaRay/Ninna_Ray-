@@ -10,6 +10,12 @@ import fs from "fs";
 const uploadDir = path.resolve(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
+const ALLOWED_MIME_TYPES = [
+  "image/jpeg", "image/png", "image/gif", "image/webp",
+  "video/mp4", "video/quicktime", "video/webm",
+  "audio/mpeg", "audio/wav", "audio/ogg",
+];
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadDir),
@@ -19,6 +25,13 @@ const upload = multer({
     },
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Nepodporovaný typ souboru: ${file.mimetype}`));
+    }
+  },
 });
 
 const openai = new OpenAI({
@@ -497,9 +510,10 @@ Vrať JSON s tímto přesným formátem (bez markdown, jen čistý JSON):
       const allMsgs = await storage.getAllMessages();
       const vaultItems = await storage.getAllContentItems();
 
-      const userTopics = allMsgs
+      const recentMsgs = allMsgs.slice(0, 200);
+      const userTopics = recentMsgs
         .filter(m => m.role === "user")
-        .slice(-100)
+        .slice(0, 100)
         .map(m => m.content)
         .join("\n");
 
@@ -562,10 +576,12 @@ Analyzuj a vrať JSON (bez markdown, čistý JSON):
       if (!message?.trim()) return res.status(400).json({ message: "Zpráva je povinná" });
 
       const allConvs = await storage.getAllConversations();
+      const batchSize = 10;
       let sent = 0;
-      for (const conv of allConvs) {
-        await storage.createMessage(conv.id, "assistant", message.trim());
-        sent++;
+      for (let i = 0; i < allConvs.length; i += batchSize) {
+        const batch = allConvs.slice(i, i + batchSize);
+        await Promise.all(batch.map(conv => storage.createMessage(conv.id, "assistant", message.trim())));
+        sent += batch.length;
       }
       res.json({ ok: true, sent });
     } catch (err) {
