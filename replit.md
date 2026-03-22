@@ -1,65 +1,81 @@
-# Lexi AI Chat Application
+# Ninna Ray AI Agency
 
 ## Overview
 
-Lexi is an AI companion chat application with a premium, intimate design inspired by Telegram Premium, Replika, and Locket Widget. The app provides a mobile-first chat experience with glassmorphism aesthetics, featuring real-time AI conversations powered by OpenAI integration.
-
-The application allows users to create profiles, engage in persistent conversations with an AI companion, and experience a visually sophisticated chat interface with smooth animations and dark theme styling.
+Ninna Ray is an AI-powered OnlyFans agency management platform. It provides a Czech-language AI chat companion (Ninna_Ray🍒) that chats with fans using GPT-4o with SSE streaming and human-like "seen/typing" delays. The app includes a full 3-role agency system: Customer (public chat), Agent (manual reply/takeover), Owner (full admin + AI Manager).
 
 ## User Preferences
 
-Preferred communication style: Simple, everyday language.
+Preferred communication style: Simple, everyday language. Czech language UI.
+
+## Routes & Roles
+
+- `/` — Landing page (customer entry)
+- `/chat` — Customer chat with Ninna AI
+- `/agent` — Agent dashboard (password: `agent2025`) — view conversations, takeover AI, send manual replies
+- `/admin` — Owner dashboard (password: `owner2025`) — stats, users, conversations viewer
+- `/manager` — AI Manager (owner login) — autonomous customer analysis, engagement scoring, content recommendations
 
 ## System Architecture
 
-### Frontend Architecture
-- **Framework**: React 18 with TypeScript
-- **Routing**: Wouter (lightweight React router)
-- **State Management**: TanStack React Query for server state, React hooks for local state
-- **Styling**: Tailwind CSS with custom design tokens, Framer Motion for animations
-- **UI Components**: Shadcn/ui (Radix UI primitives with custom styling)
-- **Build Tool**: Vite with custom plugins for Replit integration
+### Frontend
+- **Framework**: React 18 + TypeScript
+- **Routing**: Wouter
+- **State**: TanStack React Query + React hooks
+- **Styling**: Tailwind CSS v3, Framer Motion animations
+- **UI**: Shadcn/ui (Radix primitives)
+- **Build**: Vite → `dist/public/`
 
-The frontend follows a pages-based structure with shared components. Chat functionality uses custom hooks (`use-chat`, `use-user`) to manage conversation state and user sessions. Messages support markdown rendering via ReactMarkdown.
-
-### Backend Architecture
-- **Framework**: Express 5 with TypeScript
-- **API Design**: RESTful JSON API with Zod validation
-- **AI Integration**: OpenAI API via Replit AI Integrations (streaming supported)
-- **Build**: esbuild for production bundling with selective dependency bundling
-
-The server implements a modular route registration pattern. AI chat uses streaming responses for real-time typing indicators. The `replit_integrations` folder contains reusable modules for audio, chat, image generation, and batch processing.
-
-### Data Storage
-- **Database**: PostgreSQL via Drizzle ORM
-- **Schema**: Three main tables - `users`, `conversations`, `messages`
-- **Migrations**: Drizzle Kit with push-based schema sync
-
-The data model supports multi-user conversations with message history. Users have premium status flags and message counters. Conversations cascade delete their messages.
-
-### Authentication
-- **Method**: Simple localStorage-based user sessions (no password auth)
-- **User Creation**: Name-only registration flow
-- **Persistence**: User ID stored in localStorage as `ninna_user` or `lexi_chat_user_id`
-
-This is a minimal MVP authentication approach - users provide a name and get a persistent session via localStorage.
-
-## External Dependencies
-
-### AI Services
-- **OpenAI API**: Chat completions, text-to-speech, speech-to-text, image generation
-- **Configuration**: Uses `AI_INTEGRATIONS_OPENAI_API_KEY` and `AI_INTEGRATIONS_OPENAI_BASE_URL` environment variables
+### Backend
+- **Framework**: Express + TypeScript (tsx runtime)
+- **AI**: OpenAI GPT-4o via Replit AI Integrations (streaming SSE)
+- **Auth**: express-session with role-based access (Customer/Agent/Owner)
+- **Middleware**: `requireAgent` (agent+owner), `requireOwner` (owner only)
 
 ### Database
-- **PostgreSQL**: Requires `DATABASE_URL` environment variable
-- **Connection**: Node pg driver with SSL support in production
+- **PostgreSQL** via Drizzle ORM
+- **Tables**: `users` (with `aiProfile` jsonb, `aiProfileUpdatedAt`), `conversations` (with `manualMode`, `assignedAgent`), `messages`
+- **Migrations**: `npx drizzle-kit push`
 
-### Third-Party Libraries
-- **UI**: Full Radix UI component suite, Framer Motion, react-markdown
-- **Data**: TanStack Query, Zod for validation, date-fns
-- **Audio**: Custom WebAudio API integration with AudioWorklet for voice features
-- **Utilities**: clsx, tailwind-merge, nanoid
+### AI Manager System
+- GPT-4o analyzes customer conversation history
+- Generates profiles: status (hot/warm/cold/new), engagement score, personality traits, interests, buying potential
+- Provides actionable recommendations: next action, suggested messages, content ideas, warnings
+- Batch analysis: analyze all users at once
+- Endpoints: `POST /api/manager/analyze/:userId`, `GET /api/manager/overview`, `POST /api/manager/analyze-all`
 
-### Development Tools
-- **Replit Plugins**: Runtime error overlay, cartographer, dev banner
-- **Audio Processing**: ffmpeg (system dependency for WebM to WAV conversion)
+### Deployment
+- **Target**: Autoscale
+- **Build**: `npx vite build`
+- **Run**: `NODE_ENV=production npx vite build && NODE_ENV=production tsx server/index.ts`
+- **Production**: Static files served from `dist/public/`, SPA catch-all routing, secure cookies with trust proxy
+
+## Environment Variables
+
+- `DATABASE_URL` — PostgreSQL connection string
+- `AI_INTEGRATIONS_OPENAI_API_KEY` — OpenAI API key (via Replit integration)
+- `AI_INTEGRATIONS_OPENAI_BASE_URL` — OpenAI base URL (via Replit integration)
+- `SESSION_SECRET` — Express session secret
+- `AGENT_PASSWORD` — Password for agent login (default: `agent2025`)
+- `OWNER_PASSWORD` — Password for owner login (default: `owner2025`)
+
+## Future: Payments (Stripe)
+
+Stripe integration was offered but not yet set up. User dismissed the Replit Stripe connector. When ready, either:
+1. Re-propose the Replit Stripe integration connector
+2. Or ask user for Stripe API keys to store as secrets
+
+Planned features: PPV content, tips, content store, revenue dashboard.
+
+## Key Files
+
+- `server/routes.ts` — All API routes (auth, chat, agent, admin, manager)
+- `server/index.ts` — Express setup, session config, production/dev mode
+- `server/storage.ts` — Database CRUD operations
+- `server/static.ts` — Production static file serving
+- `shared/schema.ts` — Drizzle schema + Zod types
+- `client/src/pages/Landing.tsx` — Entry page
+- `client/src/pages/Chat.tsx` — Customer chat UI
+- `client/src/pages/AgentDashboard.tsx` — Agent takeover interface
+- `client/src/pages/AdminDashboard.tsx` — Owner stats/users/conversations
+- `client/src/pages/ManagerDashboard.tsx` — AI Manager autonomous analysis
