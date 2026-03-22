@@ -87,5 +87,6 @@ app.use((req, res, next) => {
   const PORT = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(PORT, "0.0.0.0", () => {
     log(`serving on port ${PORT}`);
+    import("./manager-engine").then(m => m.startManagerEngine()).catch(e => console.error("Manager engine failed to start:", e));
   });
 })();
