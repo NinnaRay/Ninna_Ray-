@@ -1,5 +1,6 @@
 const { createCanvas, loadImage } = require('canvas');
-const QRCode = require('qrcode');
+const nodeCanvas = require('canvas');
+const { JSDOM } = require('jsdom');
 const jsQR = require('jsqr');
 const fs = require('fs');
 const path = require('path');
@@ -14,232 +15,237 @@ async function decodeQR(imagePath) {
   return code ? code.data : null;
 }
 
-function getGradientColor(nx, ny) {
-  const r1 = 85, g1 = 105, b1 = 215;
-  const r2 = 165, g2 = 85, b2 = 175;
-  const r3 = 210, g3 = 70, b3 = 85;
+async function cropCenterPhoto(photoPath, outputPath) {
+  const img = await loadImage(photoPath);
+  const cropSize = Math.min(img.width, img.height * 0.22);
+  const cropX = (img.width - cropSize) / 2;
+  const cropY = 0;
+  const outSize = 400;
+  const canvas = createCanvas(outSize, outSize);
+  const ctx = canvas.getContext('2d');
+  ctx.beginPath();
+  const r = 30;
+  ctx.moveTo(r, 0);
+  ctx.lineTo(outSize - r, 0);
+  ctx.arcTo(outSize, 0, outSize, r, r);
+  ctx.lineTo(outSize, outSize - r);
+  ctx.arcTo(outSize, outSize, outSize - r, outSize, r);
+  ctx.lineTo(r, outSize);
+  ctx.arcTo(0, outSize, 0, outSize - r, r);
+  ctx.lineTo(0, r);
+  ctx.arcTo(0, 0, r, 0, r);
+  ctx.closePath();
+  ctx.clip();
+  ctx.drawImage(img, cropX, cropY, cropSize, cropSize, 0, 0, outSize, outSize);
+  const buffer = canvas.toBuffer('image/png');
+  fs.writeFileSync(outputPath, buffer);
+  return outputPath;
+}
 
-  let r, g, b;
-  if (nx < 0.5) {
-    const t = nx * 2;
-    r = r1 + (r2 - r1) * t;
-    g = g1 + (g2 - g1) * t;
-    b = b1 + (b2 - b1) * t;
-  } else {
-    const t = (nx - 0.5) * 2;
-    r = r2 + (r3 - r2) * t;
-    g = g2 + (g3 - g2) * t;
-    b = b2 + (b3 - b2) * t;
+async function generateStyledQR(url, centerPhotoPath, bgPhotoPath, outputPath) {
+  let QRCodeStyling;
+  try {
+    const mod = require('qr-code-styling/lib/qr-code-styling.common.js');
+    QRCodeStyling = mod.QRCodeStyling || mod.default || mod;
+  } catch (e) {
+    console.error('Failed to load qr-code-styling:', e.message);
+    process.exit(1);
   }
 
-  const yShift = 0.92 + 0.08 * ny;
-  r = Math.min(255, Math.round(r * yShift));
-  g = Math.min(255, Math.round(g * yShift));
-  b = Math.min(255, Math.round(b * yShift));
+  const qrSize = 800;
+  const qrCode = new QRCodeStyling({
+    jsdom: JSDOM,
+    nodeCanvas,
+    width: qrSize,
+    height: qrSize,
+    data: url,
+    dotsOptions: {
+      type: 'dots',
+      gradient: {
+        type: 'linear',
+        rotation: 0,
+        colorStops: [
+          { offset: 0, color: '#5B6EE1' },
+          { offset: 0.35, color: '#9B59B6' },
+          { offset: 0.65, color: '#C0507E' },
+          { offset: 1, color: '#D94F5C' }
+        ]
+      }
+    },
+    cornersSquareOptions: {
+      type: 'extra-rounded',
+      gradient: {
+        type: 'linear',
+        rotation: 0,
+        colorStops: [
+          { offset: 0, color: '#5B6EE1' },
+          { offset: 0.5, color: '#9B59B6' },
+          { offset: 1, color: '#D94F5C' }
+        ]
+      }
+    },
+    cornersDotOptions: {
+      type: 'dot',
+      gradient: {
+        type: 'linear',
+        rotation: 0,
+        colorStops: [
+          { offset: 0, color: '#5B6EE1' },
+          { offset: 0.5, color: '#9B59B6' },
+          { offset: 1, color: '#D94F5C' }
+        ]
+      }
+    },
+    backgroundOptions: {
+      color: 'transparent'
+    },
+    qrOptions: {
+      errorCorrectionLevel: 'H'
+    }
+  });
 
-  return `rgb(${r}, ${g}, ${b})`;
-}
+  const qrBuffer = await qrCode.getRawData('png');
+  if (!qrBuffer) {
+    console.error('Failed to generate QR code');
+    process.exit(1);
+  }
 
-function drawRoundedRect(ctx, x, y, w, h, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + w - radius, y);
-  ctx.arcTo(x + w, y, x + w, y + radius, radius);
-  ctx.lineTo(x + w, y + h - radius);
-  ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
-  ctx.lineTo(x + radius, y + h);
-  ctx.arcTo(x, y + h, x, y + h - radius, radius);
-  ctx.lineTo(x, y + radius);
-  ctx.arcTo(x, y, x + radius, y, radius);
-  ctx.closePath();
-}
+  const qrImage = await loadImage(qrBuffer);
+  const bgPhoto = await loadImage(bgPhotoPath);
+  const centerPhoto = await loadImage(centerPhotoPath);
 
-function drawFinderPattern(ctx, cx, cy, moduleSize, nx, ny) {
-  const outerSize = 7 * moduleSize;
-  const middleSize = 5 * moduleSize;
-  const innerSize = 3 * moduleSize;
+  const cardW = 900;
+  const cardH = 900;
+  const bgPadX = 80;
+  const bgPadTop = 110;
+  const bgPadBottom = 110;
+  const totalW = cardW + bgPadX * 2;
+  const totalH = cardH + bgPadTop + bgPadBottom;
 
-  const color = getGradientColor(nx, ny);
-
-  const outerRadius = moduleSize * 1.8;
-  const middleRadius = moduleSize * 1.2;
-  const innerRadius = moduleSize * 0.9;
-
-  ctx.fillStyle = color;
-  drawRoundedRect(ctx, cx - outerSize / 2, cy - outerSize / 2, outerSize, outerSize, outerRadius);
-  ctx.fill();
-
-  ctx.fillStyle = '#ffffff';
-  drawRoundedRect(ctx, cx - middleSize / 2, cy - middleSize / 2, middleSize, middleSize, middleRadius);
-  ctx.fill();
-
-  ctx.fillStyle = color;
-  drawRoundedRect(ctx, cx - innerSize / 2, cy - innerSize / 2, innerSize, innerSize, innerRadius);
-  ctx.fill();
-}
-
-async function generateStyledQR(url, photoPath, outputPath) {
-  const qrData = await QRCode.create(url, { errorCorrectionLevel: 'H' });
-  const modules = qrData.modules;
-  const moduleCount = modules.size;
-  const moduleSize = 18;
-  const qrPadding = moduleSize * 3;
-  const qrPixelSize = moduleCount * moduleSize;
-  const qrTotalSize = qrPixelSize + qrPadding * 2;
-
-  const cardPadding = 50;
-  const cardWidth = qrTotalSize + cardPadding * 2;
-  const cardHeight = qrTotalSize + cardPadding * 2;
-
-  const bgPadX = 70;
-  const bgPadTop = 100;
-  const bgPadBottom = 100;
-  const totalWidth = cardWidth + bgPadX * 2;
-  const totalHeight = cardHeight + bgPadTop + bgPadBottom;
-
-  const canvas = createCanvas(totalWidth, totalHeight);
+  const canvas = createCanvas(totalW, totalH);
   const ctx = canvas.getContext('2d');
 
-  const photo = await loadImage(photoPath);
-
-  const photoAspect = photo.width / photo.height;
-  const canvasAspect = totalWidth / totalHeight;
-  let drawW, drawH, drawX, drawY;
-  if (photoAspect > canvasAspect) {
-    drawH = totalHeight;
-    drawW = drawH * photoAspect;
-    drawX = (totalWidth - drawW) / 2;
-    drawY = 0;
+  const bgAspect = bgPhoto.width / bgPhoto.height;
+  const canvasAspect = totalW / totalH;
+  let dw, dh, dx, dy;
+  if (bgAspect > canvasAspect) {
+    dh = totalH;
+    dw = dh * bgAspect;
+    dx = (totalW - dw) / 2;
+    dy = 0;
   } else {
-    drawW = totalWidth;
-    drawH = drawW / photoAspect;
-    drawX = 0;
-    drawY = (totalHeight - drawH) / 2;
+    dw = totalW;
+    dh = dw / bgAspect;
+    dx = 0;
+    dy = (totalH - dh) / 2;
   }
-  ctx.drawImage(photo, drawX, drawY, drawW, drawH);
+  ctx.drawImage(bgPhoto, dx, dy, dw, dh);
 
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-  ctx.fillRect(0, 0, totalWidth, totalHeight);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+  ctx.fillRect(0, 0, totalW, totalH);
 
   const cardX = bgPadX;
   const cardY = bgPadTop;
-  const cardRadius = 35;
+  const cardR = 35;
 
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.12)';
-  ctx.shadowBlur = 25;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 6;
-  drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, cardRadius);
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 8;
+  ctx.beginPath();
+  ctx.moveTo(cardX + cardR, cardY);
+  ctx.lineTo(cardX + cardW - cardR, cardY);
+  ctx.arcTo(cardX + cardW, cardY, cardX + cardW, cardY + cardR, cardR);
+  ctx.lineTo(cardX + cardW, cardY + cardH - cardR);
+  ctx.arcTo(cardX + cardW, cardY + cardH, cardX + cardW - cardR, cardY + cardH, cardR);
+  ctx.lineTo(cardX + cardR, cardY + cardH);
+  ctx.arcTo(cardX, cardY + cardH, cardX, cardY + cardH - cardR, cardR);
+  ctx.lineTo(cardX, cardY + cardR);
+  ctx.arcTo(cardX, cardY, cardX + cardR, cardY, cardR);
+  ctx.closePath();
   ctx.fill();
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
 
-  const qrOriginX = cardX + cardPadding + qrPadding;
-  const qrOriginY = cardY + cardPadding + qrPadding;
+  const qrDrawSize = cardW - 80;
+  const qrX = cardX + (cardW - qrDrawSize) / 2;
+  const qrY = cardY + (cardH - qrDrawSize) / 2;
+  ctx.drawImage(qrImage, qrX, qrY, qrDrawSize, qrDrawSize);
 
-  const isFinderPattern = (row, col) => {
-    if (row < 7 && col < 7) return true;
-    if (row < 7 && col >= moduleCount - 7) return true;
-    if (row >= moduleCount - 7 && col < 7) return true;
-    return false;
-  };
+  const centerSize = qrDrawSize * 0.28;
+  const centerX = qrX + (qrDrawSize - centerSize) / 2;
+  const centerY = qrY + (qrDrawSize - centerSize) / 2;
 
-  const centerPhotoModules = 11;
-  const centerStart = Math.floor(moduleCount / 2) - Math.floor(centerPhotoModules / 2);
-  const centerEnd = centerStart + centerPhotoModules;
-  const isCenterArea = (row, col) => {
-    return row >= centerStart && row < centerEnd && col >= centerStart && col < centerEnd;
-  };
+  const bgPad = 12;
+  const bgR = 16;
+  const bx = centerX - bgPad;
+  const by = centerY - bgPad;
+  const bw = centerSize + bgPad * 2;
+  const bh = centerSize + bgPad * 2;
 
-  for (let row = 0; row < moduleCount; row++) {
-    for (let col = 0; col < moduleCount; col++) {
-      if (isFinderPattern(row, col)) continue;
-      if (isCenterArea(row, col)) continue;
-
-      if (modules.get(row, col)) {
-        const x = qrOriginX + col * moduleSize;
-        const y = qrOriginY + row * moduleSize;
-        const nx = col / moduleCount;
-        const ny = row / moduleCount;
-        const color = getGradientColor(nx, ny);
-
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        const dotRadius = moduleSize * 0.38;
-        ctx.arc(x + moduleSize / 2, y + moduleSize / 2, dotRadius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
-
-  const finderPositions = [
-    { row: 3.5, col: 3.5 },
-    { row: 3.5, col: moduleCount - 3.5 },
-    { row: moduleCount - 3.5, col: 3.5 },
-  ];
-
-  for (const fp of finderPositions) {
-    const cx = qrOriginX + fp.col * moduleSize;
-    const cy = qrOriginY + fp.row * moduleSize;
-    const nx = fp.col / moduleCount;
-    const ny = fp.row / moduleCount;
-    drawFinderPattern(ctx, cx, cy, moduleSize, nx, ny);
-  }
-
-  const photoAreaSize = centerPhotoModules * moduleSize;
-  const photoCx = qrOriginX + (moduleCount * moduleSize) / 2;
-  const photoCy = qrOriginY + (moduleCount * moduleSize) / 2;
-  const photoDrawX = photoCx - photoAreaSize / 2;
-  const photoDrawY = photoCy - photoAreaSize / 2;
-
-  const bgPad = moduleSize * 0.7;
   ctx.fillStyle = '#ffffff';
-  drawRoundedRect(
-    ctx,
-    photoDrawX - bgPad,
-    photoDrawY - bgPad,
-    photoAreaSize + bgPad * 2,
-    photoAreaSize + bgPad * 2,
-    14
-  );
+  ctx.beginPath();
+  ctx.moveTo(bx + bgR, by);
+  ctx.lineTo(bx + bw - bgR, by);
+  ctx.arcTo(bx + bw, by, bx + bw, by + bgR, bgR);
+  ctx.lineTo(bx + bw, by + bh - bgR);
+  ctx.arcTo(bx + bw, by + bh, bx + bw - bgR, by + bh, bgR);
+  ctx.lineTo(bx + bgR, by + bh);
+  ctx.arcTo(bx, by + bh, bx, by + bh - bgR, bgR);
+  ctx.lineTo(bx, by + bgR);
+  ctx.arcTo(bx, by, bx + bgR, by, bgR);
+  ctx.closePath();
   ctx.fill();
 
   ctx.save();
-  const clipR = 12;
-  drawRoundedRect(ctx, photoDrawX, photoDrawY, photoAreaSize, photoAreaSize, clipR);
+  const clipR = 14;
+  ctx.beginPath();
+  ctx.moveTo(centerX + clipR, centerY);
+  ctx.lineTo(centerX + centerSize - clipR, centerY);
+  ctx.arcTo(centerX + centerSize, centerY, centerX + centerSize, centerY + clipR, clipR);
+  ctx.lineTo(centerX + centerSize, centerY + centerSize - clipR);
+  ctx.arcTo(centerX + centerSize, centerY + centerSize, centerX + centerSize - clipR, centerY + centerSize, clipR);
+  ctx.lineTo(centerX + clipR, centerY + centerSize);
+  ctx.arcTo(centerX, centerY + centerSize, centerX, centerY + centerSize - clipR, clipR);
+  ctx.lineTo(centerX, centerY + clipR);
+  ctx.arcTo(centerX, centerY, centerX + clipR, centerY, clipR);
+  ctx.closePath();
   ctx.clip();
-
-  const cropH = photo.height * 0.22;
-  const cropW = cropH;
-  const cropX = (photo.width - cropW) / 2;
-  const cropY = photo.height * 0.02;
-  ctx.drawImage(photo, cropX, cropY, cropW, cropH, photoDrawX, photoDrawY, photoAreaSize, photoAreaSize);
+  ctx.drawImage(centerPhoto, centerX, centerY, centerSize, centerSize);
   ctx.restore();
 
-  const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(outputPath, buffer);
-  console.log(`QR code saved to ${outputPath} (${totalWidth}x${totalHeight})`);
-  return outputPath;
+  const finalBuffer = canvas.toBuffer('image/png');
+  fs.writeFileSync(outputPath, finalBuffer);
+  console.log(`Final QR saved to ${outputPath} (${totalW}x${totalH})`);
 }
 
 async function main() {
   const blackQrPath = path.join(__dirname, '..', 'attached_assets', 'IMG_6359_1774209483244.jpeg');
   const photoPath = path.join(__dirname, '..', 'attached_assets', 'IMG_6829_1774208208905.jpeg');
+  const centerPhotoPath = path.join(__dirname, '..', 'center_photo.png');
   const outputPath = path.join(__dirname, '..', 'generated_qr.png');
 
-  console.log('Decoding QR code from black QR image...');
+  console.log('Step 1: Decoding URL from black QR code...');
   const url = await decodeQR(blackQrPath);
-
   if (!url) {
-    console.error('Could not decode QR code. Using fallback URL.');
+    console.error('Could not decode QR code.');
     process.exit(1);
   }
+  console.log(`URL: ${url}`);
 
-  console.log(`Decoded URL: ${url}`);
-  console.log('Generating styled QR code...');
-  await generateStyledQR(url, photoPath, outputPath);
+  console.log('Step 2: Cropping center photo...');
+  await cropCenterPhoto(photoPath, centerPhotoPath);
+  console.log('Center photo cropped.');
+
+  console.log('Step 3: Converting center photo to data URL...');
+  const photoBuffer = fs.readFileSync(centerPhotoPath);
+  const photoDataUrl = 'data:image/png;base64,' + photoBuffer.toString('base64');
+  console.log('Step 4: Generating styled QR code...');
+  await generateStyledQR(url, photoDataUrl, photoPath, outputPath);
   console.log('Done!');
 }
 
-main().catch(console.error);
+main().catch(err => {
+  console.error('Error:', err);
+  process.exit(1);
+});
