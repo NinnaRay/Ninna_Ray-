@@ -127,219 +127,109 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ─── Grouping helpers ────────────────────────────────────────────────────────
+
 type UserGroup = {
   name: string;
   sessions: ManagerUser[];
-  totalMessages: number;
-  totalConversations: number;
-  lastActivity: string | null;
   bestProfile: AiProfile | null;
   bestStatus: "hot" | "warm" | "cold" | "new";
-};
-
-type ConversationDetail = {
-  id: number;
-  title: string;
-  manualMode: boolean;
-  assignedAgent: string | null;
-  createdAt: string;
-  messageCount: number;
-  lastMessage: { role: string; content: string; createdAt: string } | null;
-  messages: { id: number; role: string; content: string; createdAt: string }[];
+  totalMessages: number;
+  totalConversations: number;
 };
 
 function groupUsers(users: ManagerUser[]): UserGroup[] {
   const map = new Map<string, ManagerUser[]>();
-  for (const u of users) {
+  users.forEach(u => {
     const key = u.name.trim().toLowerCase();
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(u);
-  }
-
-  const statusPriority: Record<string, number> = { hot: 0, warm: 1, cold: 2, new: 3 };
-
-  const groups: UserGroup[] = [];
-  for (const [, sessions] of map) {
-    const totalMessages = sessions.reduce((s, u) => s + u.totalMessages, 0);
-    const totalConversations = sessions.reduce((s, u) => s + u.conversations, 0);
-    const activities = sessions.map(u => u.lastActivity).filter(Boolean) as string[];
-    const lastActivity = activities.length > 0 ? activities.sort().reverse()[0] : null;
-
-    let bestProfile: AiProfile | null = null;
-    let bestStatus: "hot" | "warm" | "cold" | "new" = "new";
-    for (const u of sessions) {
-      if (u.aiProfile) {
-        const uStatus = u.aiProfile.status || "new";
-        if (!bestProfile || (statusPriority[uStatus] ?? 3) < (statusPriority[bestStatus] ?? 3)) {
-          bestProfile = u.aiProfile;
-          bestStatus = uStatus;
-        }
-      }
-    }
-
-    groups.push({
+    const arr = map.get(key) || [];
+    arr.push(u);
+    map.set(key, arr);
+  });
+  const statusRank = { hot: 0, warm: 1, cold: 2, new: 3 };
+  return Array.from(map.values()).map(sessions => {
+    const withProfile = sessions.filter(s => s.aiProfile);
+    const bestProfile = withProfile.sort((a, b) => statusRank[a.aiProfile!.status] - statusRank[b.aiProfile!.status])[0]?.aiProfile || null;
+    return {
       name: sessions[0].name,
       sessions,
-      totalMessages,
-      totalConversations,
-      lastActivity,
       bestProfile,
-      bestStatus,
-    });
-  }
-
-  groups.sort((a, b) => {
-    const sDiff = (statusPriority[a.bestStatus] ?? 3) - (statusPriority[b.bestStatus] ?? 3);
-    if (sDiff !== 0) return sDiff;
-    const aT = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
-    const bT = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
-    return bT - aT;
+      bestStatus: bestProfile?.status || "new",
+      totalMessages: sessions.reduce((s, u) => s + u.totalMessages, 0),
+      totalConversations: sessions.reduce((s, u) => s + u.conversations, 0),
+    };
   });
-
-  return groups;
 }
 
-// ─── Tab: Customers (Messenger-style) ────────────────────────────────────────
+// ─── Chat history for detail view ────────────────────────────────────────────
 
-function ChatStream({ userIds }: { userIds: number[] }) {
-  const { data: convs, isLoading } = useQuery<ConversationDetail[]>({
-    queryKey: ["/api/manager/bulk-conversations", ...userIds],
-    queryFn: () => fetch("/api/manager/users/bulk-conversations", {
+type ConvMessage = { role: string; content: string; createdAt: string };
+type ConvData = { id: number; title: string; messages: ConvMessage[] };
+
+function ChatHistory({ userIds }: { userIds: number[] }) {
+  const [convs, setConvs] = useState<ConvData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch("/api/manager/users/bulk-conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userIds }),
-    }).then(r => r.json()),
-  });
-  const msgsEndRef = useRef<HTMLDivElement>(null);
+    })
+      .then(r => r.json())
+      .then(data => { setConvs(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [userIds.join(",")]);
 
-  useEffect(() => {
-    if (convs && convs.length > 0) {
-      setTimeout(() => msgsEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    }
-  }, [convs]);
+  if (loading) return <div className="p-4 text-center text-neutral-500 text-sm">Načítám konverzace...</div>;
 
-  if (isLoading) return <div className="p-6 text-center text-neutral-500 text-sm">Nacitam zpravy...</div>;
-
-  const allMessages = (convs || []).flatMap(conv =>
+  const allMessages = convs.flatMap(conv =>
     conv.messages.map(msg => ({ ...msg, convTitle: conv.title }))
   ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-  if (allMessages.length === 0) return <div className="p-6 text-center text-neutral-500 text-sm">Zadne zpravy</div>;
+  if (allMessages.length === 0) return <div className="p-4 text-center text-neutral-500 text-sm">Žádné zprávy</div>;
 
   let lastDate = "";
 
   return (
-    <div className="px-4 py-3 space-y-1.5" data-testid="chat-stream">
+    <div className="px-4 py-3 space-y-1.5" data-testid="chat-history">
       {allMessages.map((msg, idx) => {
         const msgDate = new Date(msg.createdAt).toLocaleDateString("cs-CZ", { day: "numeric", month: "long", year: "numeric" });
         const showDate = msgDate !== lastDate;
         lastDate = msgDate;
-
+        const isUser = msg.role === "user";
         return (
-          <div key={msg.id}>
+          <div key={idx}>
             {showDate && (
-              <div className="flex justify-center my-3">
+              <div className="text-center my-3">
                 <span className="text-[10px] bg-neutral-800 text-neutral-500 px-3 py-1 rounded-full">{msgDate}</span>
               </div>
             )}
-            <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div data-testid={`msg-bubble-${msg.id}`}
-                className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-emerald-600 text-white rounded-br-sm"
-                    : msg.role === "system"
-                    ? "bg-neutral-800/50 text-neutral-500 text-xs italic rounded-bl-sm"
-                    : "bg-neutral-800 text-neutral-200 rounded-bl-sm"
-                }`}>
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                <p className={`text-[9px] mt-1 ${msg.role === "user" ? "text-emerald-200/50" : "text-neutral-600"}`}>
-                  {new Date(msg.createdAt).toLocaleString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
+            <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+              <div data-testid={`msg-bubble-${idx}`}
+                className={`max-w-[80%] rounded-2xl px-3 py-2 text-xs ${isUser ? "bg-emerald-600/30 text-emerald-100 rounded-br-md" : "bg-neutral-800 text-neutral-300 rounded-bl-md"}`}>
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+                <p className={`text-[9px] mt-1 ${isUser ? "text-emerald-400/60" : "text-neutral-600"}`}>
+                  {new Date(msg.createdAt).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
             </div>
           </div>
         );
       })}
-      <div ref={msgsEndRef} />
     </div>
   );
 }
 
-function ProfilePanel({ group, analyzeMut, analyzingId }: { group: UserGroup; analyzeMut: any; analyzingId: number | null }) {
-  if (!group.bestProfile) {
-    return (
-      <div className="p-6 text-center">
-        <p className="text-neutral-500 text-sm mb-3">Neanalyzovan</p>
-        <button onClick={() => { for (const s of group.sessions) analyzeMut.mutate(s.id); }}
-          data-testid="button-run-analysis"
-          className="bg-emerald-600 text-white px-5 py-2 rounded-xl font-bold text-sm">Spustit analyzu</button>
-      </div>
-    );
-  }
-  const p = group.bestProfile;
-  const cfg = STATUS_CONFIG[p.status];
-  return (
-    <div className="p-4 space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
-        <span className="text-xs text-neutral-500">Potencial: <strong className={p.buyingPotential === "vysoký" ? "text-red-400" : p.buyingPotential === "střední" ? "text-orange-400" : "text-blue-400"}>{p.buyingPotential}</strong></span>
-      </div>
-      <div><div className="flex justify-between text-[10px] text-neutral-500 mb-1"><span>Engagement</span><span className="font-bold">{p.engagementScore}%</span></div><ScoreBar score={p.engagementScore} /></div>
-      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">📋 Profil</p>
-        <p className="text-sm text-neutral-300">{p.summary}</p>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎭 Osobnost</p>
-          <div className="flex flex-wrap gap-1">{p.personality.map((t, i) => <span key={i} className="text-[10px] bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded">{t}</span>)}</div>
-        </div>
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">❤️ Zajmy</p>
-          <div className="flex flex-wrap gap-1">{p.interests.map((t, i) => <span key={i} className="text-[10px] bg-pink-500/20 border border-pink-500/30 text-pink-400 px-1.5 py-0.5 rounded">{t}</span>)}</div>
-        </div>
-      </div>
-      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
-        <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">💡 Doporucena akce</p>
-        <p className="text-sm text-emerald-300">{p.nextAction}</p>
-      </div>
-      {p.suggestedMessages.length > 0 && (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">✍️ Navrhovane zpravy</p>
-          {p.suggestedMessages.map((msg, i) => (
-            <div key={i} className="flex items-start justify-between gap-1 bg-neutral-800/60 rounded-lg px-2 py-2 mb-1">
-              <p className="text-xs text-white">{msg}</p>
-              <CopyButton text={msg} />
-            </div>
-          ))}
-        </div>
-      )}
-      {p.contentIdeas.length > 0 && (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
-          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎬 Content napady</p>
-          {p.contentIdeas.map((idea, i) => (
-            <div key={i} className="flex items-start gap-1 mb-1"><span className="text-pink-500 text-xs">→</span><p className="text-xs text-neutral-300">{idea}</p></div>
-          ))}
-        </div>
-      )}
-      {p.warnings.length > 0 && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-          <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">⚠️ Varovani</p>
-          {p.warnings.map((w, i) => <p key={i} className="text-xs text-red-300">{w}</p>)}
-        </div>
-      )}
-    </div>
-  );
-}
+// ─── Tab: Customers ──────────────────────────────────────────────────────────
 
 function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<typeof useQueryClient> }) {
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
   const [filter, setFilter] = useState<"all" | "hot" | "warm" | "cold" | "new">("all");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const groups = groupUsers(users);
+  const [search, setSearch] = useState("");
 
   const analyzeMut = useMutation({
     mutationFn: async (userId: number) => {
@@ -357,13 +247,16 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
     setTimeout(() => { qc.invalidateQueries({ queryKey: ["/api/manager/overview"] }); setBatchRunning(false); }, 15000);
   };
 
+  const groups = groupUsers(users);
+
   const filteredGroups = groups
     .filter(g => filter === "all" || g.bestStatus === filter)
-    .filter(g => !searchQuery || g.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    .filter(g => !search.trim() || g.name.toLowerCase().includes(search.trim().toLowerCase()));
 
-  const selectedGroupData = groups.find(g => g.name.toLowerCase() === selectedGroup?.toLowerCase());
+  const activeGroup = groups.find(g => g.name === selectedGroup);
+  const primaryUser = activeGroup?.sessions.find(s => s.aiProfile) || activeGroup?.sessions[0];
 
-  const uniqueCounts = {
+  const counts = {
     all: groups.length,
     hot: groups.filter(g => g.bestStatus === "hot").length,
     warm: groups.filter(g => g.bestStatus === "warm").length,
@@ -373,103 +266,142 @@ function CustomersTab({ users, qc }: { users: ManagerUser[]; qc: ReturnType<type
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <div className={`w-full md:w-80 border-r border-neutral-800 flex flex-col overflow-hidden ${selectedGroup !== null ? "hidden md:flex" : "flex"}`}>
-        <div className="px-3 py-2 border-b border-neutral-800 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex gap-1 overflow-x-auto">
-              {(["all", "hot", "warm", "cold", "new"] as const).map(f => (
-                <button key={f} onClick={() => { setFilter(f); setSelectedGroup(null); }}
-                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors whitespace-nowrap ${filter === f ? "bg-neutral-700 text-white" : "text-neutral-500 hover:text-neutral-300"}`}>
-                  {f === "all" ? `Vse (${uniqueCounts.all})` : f === "hot" ? `🔥${uniqueCounts.hot}` : f === "warm" ? `⚡${uniqueCounts.warm}` : f === "cold" ? `❄️${uniqueCounts.cold}` : `🌱${uniqueCounts.new}`}
-                </button>
-              ))}
-            </div>
-            <button onClick={analyzeAll} disabled={batchRunning} data-testid="button-analyze-all"
-              className={`text-[10px] px-3 py-1.5 rounded-lg font-bold transition-colors shrink-0 ml-2 ${batchRunning ? "bg-neutral-700 text-neutral-500" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
-              {batchRunning ? "⏳..." : "⚡ Vše"}
-            </button>
+      <div className={`w-full md:w-96 border-r border-neutral-800 flex flex-col overflow-hidden ${selectedGroup !== null ? "hidden md:flex" : "flex"}`}>
+        <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-800">
+          <div className="flex gap-1 overflow-x-auto">
+            {(["all", "hot", "warm", "cold", "new"] as const).map(f => (
+              <button key={f} onClick={() => { setFilter(f); setSelectedGroup(null); }}
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors whitespace-nowrap ${filter === f ? "bg-neutral-700 text-white" : "text-neutral-500 hover:text-neutral-300"}`}>
+                {f === "all" ? `Vše (${counts.all})` : f === "hot" ? `🔥${counts.hot}` : f === "warm" ? `⚡${counts.warm}` : f === "cold" ? `❄️${counts.cold}` : `🌱${counts.new}`}
+              </button>
+            ))}
           </div>
-          <input
-            type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Hledat zakaznika..."
+          <button onClick={analyzeAll} disabled={batchRunning} data-testid="button-analyze-all"
+            className={`text-[10px] px-3 py-1.5 rounded-lg font-bold transition-colors shrink-0 ml-2 ${batchRunning ? "bg-neutral-700 text-neutral-500" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
+            {batchRunning ? "⏳..." : "⚡ Vše"}
+          </button>
+        </div>
+        <div className="px-3 py-2 border-b border-neutral-800">
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Hledat..."
             data-testid="input-search-users"
-            className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-lg px-3 py-1.5 text-xs outline-none focus:border-emerald-500 placeholder-neutral-600"
-          />
+            className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-lg px-3 py-1.5 text-xs outline-none focus:border-emerald-500" />
         </div>
         <div className="flex-1 overflow-y-auto">
           {filteredGroups.map(group => {
             const cfg = STATUS_CONFIG[group.bestStatus];
-            const isSelected = selectedGroup?.toLowerCase() === group.name.toLowerCase();
-            const lastMsg = group.sessions.reduce((best, s) => {
-              if (s.lastActivity && (!best || s.lastActivity > best)) return s.lastActivity;
-              return best;
-            }, "" as string);
+            const isSelected = selectedGroup === group.name;
             return (
-              <button key={group.name} onClick={() => setSelectedGroup(group.name)}
-                data-testid={`button-select-group-${group.name}`}
-                className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/50 hover:bg-neutral-800/40 transition-colors ${isSelected ? "bg-neutral-800" : ""}`}>
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>
-                    {group.name[0]?.toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <p className="font-semibold text-sm truncate">{group.name}</p>
-                        {group.sessions.length > 1 && (
-                          <span className="text-[8px] bg-neutral-700 text-neutral-400 px-1 py-0.5 rounded-full font-bold shrink-0">{group.sessions.length}x</span>
-                        )}
-                      </div>
-                      {lastMsg && (
-                        <span className="text-[9px] text-neutral-600 shrink-0 ml-1">
-                          {formatDistanceToNow(new Date(lastMsg), { addSuffix: false, locale: cs })}
-                        </span>
-                      )}
+              <button key={group.name} onClick={() => setSelectedGroup(group.name)} data-testid={`button-select-group-${group.name}`}
+                className={`w-full text-left px-4 py-3 border-b border-neutral-800/50 hover:bg-neutral-800/40 transition-colors ${isSelected ? "bg-neutral-800" : ""}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${cfg.bg} ${cfg.border} ${cfg.text}`}>{group.name[0]?.toUpperCase()}</div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm truncate">{group.name}</p>
+                      <p className="text-[10px] text-neutral-500">
+                        {group.totalMessages} zpráv
+                        {group.sessions.length > 1 && <span className="ml-1 text-neutral-600">· {group.sessions.length}x</span>}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-neutral-500 truncate mt-0.5">{group.totalMessages} zprav</p>
                   </div>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{group.bestProfile?.statusLabel || "Nový"}</span>
                 </div>
               </button>
             );
           })}
-          {filteredGroups.length === 0 && <div className="text-center text-neutral-600 py-12 text-sm">Zadni zakaznici</div>}
+          {filteredGroups.length === 0 && <div className="text-center text-neutral-600 py-12 text-sm">Žádní zákazníci</div>}
         </div>
       </div>
 
       <div className={`flex-1 flex flex-col overflow-hidden ${selectedGroup === null ? "hidden md:flex" : "flex"}`}>
-        {!selectedGroupData ? (
+        {!activeGroup || !primaryUser ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-3">
             <div className="text-4xl">👥</div>
-            <p className="text-neutral-500 text-sm">Vyber zakaznika ze seznamu</p>
+            <p className="text-neutral-500 text-sm">Vyber zákazníka ze seznamu</p>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="border-b border-neutral-800 px-4 py-2 bg-neutral-900/80 backdrop-blur flex items-center justify-between z-10">
-              <div className="flex items-center gap-3">
-                <button onClick={() => setSelectedGroup(null)} className="md:hidden text-neutral-500 hover:text-white text-sm" data-testid="button-back">←</button>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border shrink-0 ${STATUS_CONFIG[selectedGroupData.bestStatus].bg} ${STATUS_CONFIG[selectedGroupData.bestStatus].border} ${STATUS_CONFIG[selectedGroupData.bestStatus].text}`}>
-                  {selectedGroupData.name[0]?.toUpperCase()}
-                </div>
-                <div>
-                  <p className="font-bold text-sm leading-tight">{selectedGroupData.name}</p>
-                  <p className="text-[10px] text-neutral-500">{selectedGroupData.totalMessages} zprav · {selectedGroupData.totalConversations} konverzaci</p>
-                </div>
+          <div className="flex-1 overflow-y-auto">
+            <div className="sticky top-0 border-b border-neutral-800 px-4 py-2 bg-neutral-950/95 backdrop-blur flex items-center justify-between z-10">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setSelectedGroup(null)} className="md:hidden text-neutral-500 hover:text-white">←</button>
+                <p className="font-bold text-sm">{activeGroup.name}</p>
+                {activeGroup.sessions.length > 1 && <span className="text-[10px] text-neutral-500 bg-neutral-800 px-1.5 py-0.5 rounded">{activeGroup.sessions.length} sessions</span>}
               </div>
-              <button onClick={() => { for (const s of selectedGroupData.sessions) analyzeMut.mutate(s.id); }}
-                disabled={analyzingId !== null} data-testid="button-analyze-user"
-                className="text-[10px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-bold transition-colors">
-                {analyzingId !== null ? "⏳ Analyzuji..." : "🧠 Analyzovat"}
+              <button onClick={() => primaryUser && analyzeMut.mutate(primaryUser.id)} disabled={analyzingId === primaryUser?.id} data-testid="button-analyze-user"
+                className="text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-bold">
+                {analyzingId === primaryUser?.id ? "⏳..." : "🧠 Analyzovat"}
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
-              <ProfilePanel group={selectedGroupData} analyzeMut={analyzeMut} analyzingId={analyzingId} />
-              <div className="border-t border-neutral-800">
-                <div className="px-4 py-3 bg-neutral-900/60">
-                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">💬 Historie konverzaci</p>
-                </div>
-                <ChatStream userIds={selectedGroupData.sessions.map(s => s.id)} />
+            {!activeGroup.bestProfile ? (
+              <div className="flex flex-col items-center justify-center p-12 text-center gap-3">
+                <p className="text-neutral-500 text-sm">Neanalyzován</p>
+                <button onClick={() => primaryUser && analyzeMut.mutate(primaryUser.id)} className="bg-emerald-600 text-white px-5 py-2 rounded-xl font-bold text-sm">Spustit analýzu</button>
               </div>
+            ) : (
+              <div className="p-4 space-y-4">
+                {(() => {
+                  const p = activeGroup.bestProfile!;
+                  const cfg = STATUS_CONFIG[p.status];
+                  return (<>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
+                      <span className="text-xs text-neutral-500">Potenciál: <strong className={p.buyingPotential === "vysoký" ? "text-red-400" : p.buyingPotential === "střední" ? "text-orange-400" : "text-blue-400"}>{p.buyingPotential}</strong></span>
+                    </div>
+                    <div><div className="flex justify-between text-[10px] text-neutral-500 mb-1"><span>Engagement</span><span className="font-bold">{p.engagementScore}%</span></div><ScoreBar score={p.engagementScore} /></div>
+                    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">📋 Profil</p>
+                      <p className="text-sm text-neutral-300">{p.summary}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎭 Osobnost</p>
+                        <div className="flex flex-wrap gap-1">{p.personality.map((t, i) => <span key={i} className="text-[10px] bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded">{t}</span>)}</div>
+                      </div>
+                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">❤️ Zájmy</p>
+                        <div className="flex flex-wrap gap-1">{p.interests.map((t, i) => <span key={i} className="text-[10px] bg-pink-500/20 border border-pink-500/30 text-pink-400 px-1.5 py-0.5 rounded">{t}</span>)}</div>
+                      </div>
+                    </div>
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+                      <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">💡 Doporučená akce</p>
+                      <p className="text-sm text-emerald-300">{p.nextAction}</p>
+                    </div>
+                    {p.suggestedMessages.length > 0 && (
+                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">✍️ Navrhované zprávy</p>
+                        {p.suggestedMessages.map((msg, i) => (
+                          <div key={i} className="flex items-start justify-between gap-1 bg-neutral-800/60 rounded-lg px-2 py-2 mb-1">
+                            <p className="text-xs text-white">{msg}</p>
+                            <CopyButton text={msg} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {p.contentIdeas.length > 0 && (
+                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-2">🎬 Content nápady</p>
+                        {p.contentIdeas.map((idea, i) => (
+                          <div key={i} className="flex items-start gap-1 mb-1"><span className="text-pink-500 text-xs">→</span><p className="text-xs text-neutral-300">{idea}</p></div>
+                        ))}
+                      </div>
+                    )}
+                    {p.warnings.length > 0 && (
+                      <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">⚠️ Varování</p>
+                        {p.warnings.map((w, i) => <p key={i} className="text-xs text-red-300">{w}</p>)}
+                      </div>
+                    )}
+                  </>);
+                })()}
+              </div>
+            )}
+
+            <div className="border-t border-neutral-800 mt-2">
+              <div className="px-4 py-3">
+                <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">💬 Historie konverzací</p>
+              </div>
+              <ChatHistory userIds={activeGroup.sessions.map(s => s.id)} />
             </div>
           </div>
         )}
@@ -484,8 +416,6 @@ function VaultTab() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [desc, setDesc] = useState("");
   const [tags, setTags] = useState("");
   const [category, setCategory] = useState("general");
@@ -495,39 +425,21 @@ function VaultTab() {
     queryFn: () => fetch("/api/vault/items").then(r => r.json()),
   });
 
-  const handleFileSelect = () => {
-    const files = fileRef.current?.files;
-    if (files) setSelectedFiles(Array.from(files));
-  };
-
-  const removeFile = (idx: number) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== idx));
-    if (fileRef.current) fileRef.current.value = "";
-  };
-
   const handleUpload = async () => {
-    if (selectedFiles.length === 0) return;
+    const files = fileRef.current?.files;
+    if (!files || files.length === 0) return;
     setUploading(true);
-    const total = selectedFiles.length;
-    setUploadProgress({ done: 0, total });
-
-    const batchSize = 5;
-    for (let i = 0; i < total; i += batchSize) {
-      const batch = selectedFiles.slice(i, i + batchSize);
+    const tagsParsed = JSON.stringify(tags.split(",").map(t => t.trim()).filter(Boolean));
+    for (let i = 0; i < files.length; i++) {
       const fd = new FormData();
-      for (const file of batch) {
-        fd.append("files", file);
-      }
+      fd.append("files", files[i]);
       fd.append("description", desc);
-      fd.append("tags", JSON.stringify(tags.split(",").map(t => t.trim()).filter(Boolean)));
+      fd.append("tags", tagsParsed);
       fd.append("category", category);
       await fetch("/api/vault/upload", { method: "POST", body: fd });
-      setUploadProgress({ done: Math.min(i + batchSize, total), total });
     }
-
     qc.invalidateQueries({ queryKey: ["/api/vault/items"] });
     setDesc(""); setTags(""); setCategory("general");
-    setSelectedFiles([]);
     if (fileRef.current) fileRef.current.value = "";
     setUploading(false);
   };
@@ -549,31 +461,15 @@ function VaultTab() {
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 space-y-3">
-        <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">📤 Nahrat obsah</p>
+        <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">📤 Nahrát obsah</p>
         <input ref={fileRef} type="file" accept="image/*,video/*,audio/*" multiple
-          onChange={handleFileSelect}
           data-testid="input-vault-file"
           className="w-full text-sm text-neutral-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 file:cursor-pointer" />
-        {selectedFiles.length > 0 && (
-          <div className="bg-neutral-800/50 border border-neutral-700 rounded-xl p-2 space-y-1">
-            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">
-              Vybrano: {selectedFiles.length} souboru ({(selectedFiles.reduce((s, f) => s + f.size, 0) / (1024 * 1024)).toFixed(1)} MB)
-            </p>
-            <div className="flex flex-wrap gap-1">
-              {selectedFiles.map((f, idx) => (
-                <span key={idx} className="inline-flex items-center gap-1 text-[10px] bg-neutral-700 text-neutral-300 px-2 py-1 rounded-lg">
-                  {f.type.startsWith("image") ? "📸" : f.type.startsWith("video") ? "🎬" : "🎵"} {f.name.length > 20 ? f.name.slice(0, 17) + "..." : f.name}
-                  <button onClick={() => removeFile(idx)} className="text-neutral-500 hover:text-red-400 ml-0.5">×</button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-        <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Popis (volitelne)"
+        <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Popis (volitelné)"
           data-testid="input-vault-description"
           className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500" />
         <div className="flex gap-2">
-          <input value={tags} onChange={e => setTags(e.target.value)} placeholder="Tagy (oddelene carkou)"
+          <input value={tags} onChange={e => setTags(e.target.value)} placeholder="Tagy (oddělené čárkou)"
             data-testid="input-vault-tags"
             className="flex-1 bg-neutral-800 border border-neutral-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500" />
           <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-vault-category"
@@ -581,13 +477,9 @@ function VaultTab() {
             {CATS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </div>
-        <button onClick={handleUpload} disabled={uploading || selectedFiles.length === 0} data-testid="button-vault-upload"
+        <button onClick={handleUpload} disabled={uploading} data-testid="button-vault-upload"
           className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
-          {uploading
-            ? `⏳ Nahravam ${uploadProgress.done}/${uploadProgress.total}...`
-            : selectedFiles.length > 1
-            ? `📤 Nahrat ${selectedFiles.length} souboru`
-            : "📤 Nahrat"}
+          {uploading ? "⏳ Nahrávám..." : "📤 Nahrát"}
         </button>
       </div>
 
@@ -845,7 +737,7 @@ export default function ManagerDashboard() {
           <span className="text-xl">🧠</span>
           <div>
             <h1 className="font-bold text-sm leading-none" data-testid="text-dashboard-title">AI Manager</h1>
-            <p className="text-neutral-500 text-[10px]">{groupUsers(users).length} zakazniku ({users.length} relaci)</p>
+            <p className="text-neutral-500 text-[10px]">{users.length} zákazníků</p>
           </div>
         </div>
         <button onClick={logout} data-testid="button-logout" className="text-neutral-500 hover:text-white text-xs transition-colors">Odhlásit</button>
