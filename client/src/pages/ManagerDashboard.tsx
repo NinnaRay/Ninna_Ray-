@@ -432,7 +432,8 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup, initialFilte
           <div className="flex-1 overflow-y-auto">
             <div className="sticky top-0 border-b border-neutral-800 px-4 py-2 bg-neutral-950/95 backdrop-blur flex items-center justify-between z-10">
               <div className="flex items-center gap-2">
-                <button onClick={() => setSelectedGroup(null)} className="md:hidden text-neutral-500 hover:text-white">←</button>
+                <button onClick={() => setSelectedGroup(null)} data-testid="button-back-to-list"
+                  className="text-neutral-500 hover:text-white transition-colors text-sm">← Zpět</button>
                 <p className="font-bold text-sm">{activeGroup.name}</p>
                 {activeGroup.sessions.length > 1 && <span className="text-[10px] text-neutral-500 bg-neutral-800 px-1.5 py-0.5 rounded">{activeGroup.sessions.length} sessions</span>}
               </div>
@@ -910,7 +911,7 @@ type ManagerActionRecord = {
   createdAt: string;
 };
 
-function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?: (tab: "customers", filter?: string) => void }) {
+function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?: (tab: "overview" | "customers" | "vault" | "trends" | "broadcast" | "payments", filter?: string, group?: string) => void }) {
   const qc = useQueryClient();
   const { data: engineStatus } = useQuery<EngineStatus>({
     queryKey: ["/api/manager/engine-status"],
@@ -1053,21 +1054,24 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="stat-card-0">
+        <button onClick={() => onNavigate?.("customers")} data-testid="stat-card-0"
+          className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center hover:border-neutral-600 hover:bg-neutral-800/80 transition-all cursor-pointer">
           <p className="text-lg font-bold text-white">{groups.length}</p>
           <p className="text-[10px] text-neutral-500">👥 Zákazníci</p>
           <p className="text-[9px] text-neutral-600">{analyzed} analýz</p>
-        </div>
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="stat-card-1">
+        </button>
+        <button onClick={() => onNavigate?.("trends")} data-testid="stat-card-1"
+          className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center hover:border-neutral-600 hover:bg-neutral-800/80 transition-all cursor-pointer">
           <p className={`text-lg font-bold ${avgEngagement >= 60 ? "text-red-400" : avgEngagement >= 35 ? "text-orange-400" : "text-blue-400"}`}>{Math.round(avgEngagement)}%</p>
           <p className="text-[10px] text-neutral-500">📊 Engagement</p>
           <p className="text-[9px] text-neutral-600">{avgEngagement >= 60 ? "silný" : avgEngagement >= 35 ? "střední" : "nízký"}</p>
-        </div>
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="stat-card-2">
+        </button>
+        <button onClick={() => onNavigate?.("payments")} data-testid="stat-card-2"
+          className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center hover:border-neutral-600 hover:bg-neutral-800/80 transition-all cursor-pointer">
           <p className="text-lg font-bold text-emerald-400">{pendingActions.length}</p>
           <p className="text-[10px] text-neutral-500">📨 K odeslání</p>
           <p className="text-[9px] text-neutral-600">{doneActions.length} hotovo</p>
-        </div>
+        </button>
       </div>
 
       <div className="space-y-2">
@@ -1689,7 +1693,7 @@ export default function ManagerDashboard() {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {activeTab === "overview" && <OverviewTab users={users} onNavigate={(tab, filter) => { setActiveTab(tab); setInitialFilter(filter); setSelectedGroup(null); }} />}
+        {activeTab === "overview" && <OverviewTab users={users} onNavigate={(tab, filter, group) => { setActiveTab(tab); setInitialFilter(filter); if (group) setSelectedGroup(group); else setSelectedGroup(null); }} />}
         {activeTab === "customers" && <CustomersTab users={users} qc={qc} selectedGroup={selectedGroup} setSelectedGroup={setSelectedGroup} initialFilter={initialFilter} />}
         {activeTab === "vault" && <VaultTab />}
         {activeTab === "trends" && <TrendsTab />}
