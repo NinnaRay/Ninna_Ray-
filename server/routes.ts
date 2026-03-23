@@ -394,6 +394,13 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
     res.json(getManagerStatus());
   });
 
+  app.post("/api/manager/engine-pause", requireOwner, async (req, res) => {
+    const { setEnginePaused } = await import("./manager-engine");
+    const { paused } = req.body;
+    setEnginePaused(!!paused);
+    res.json({ ok: true, paused: !!paused });
+  });
+
   app.get("/api/manager/actions", requireOwner, async (req, res) => {
     try {
       const since = req.query.since ? new Date(req.query.since as string) : undefined;
