@@ -37,8 +37,14 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - **Tables**: `users` (with `aiProfile` jsonb, `aiProfileUpdatedAt`), `conversations` (with `manualMode`, `assignedAgent`), `messages`, `content_items` (vault), `manager_actions` (action queue), `manager_log` (engine activity log)
 - **Migrations**: `npx drizzle-kit push`
 
-### AI Manager System — Autonomous Engine
-- **Fully autonomous** — runs on 10-minute interval, analyzes ALL users, generates actions without user input
+### AI Manager System — Fully Autonomous Engine
+- **Fully autonomous** — runs on 10-minute interval, analyzes ALL users, generates actions AND EXECUTES THEM automatically
+- **Auto-execution**: Engine sends messages directly to customer conversations — no manual intervention needed
+  - `timing: "teď"` → sent immediately after analysis
+  - `timing: "za 1h"` / `"za 3h"` → queued in delayed queue, processed every 30s
+  - `timing: "dnes večer"` → 4h delay; `"zítra"` → 12h delay
+- **Pause/Resume**: Owner can pause engine via `POST /api/manager/engine-pause` — stops all auto-sending
+- **Backlog sweep**: On engine start, processes all pending actions from previous runs
 - **Engine file**: `server/manager-engine.ts` — starts on server boot, runs `runFullScan()` every 10 min
 - **Auto-reanalyze**: After each chat message, triggers re-analysis if profile > 5 min old
 - **Adaptive personalization** — builds persistent individual profiles per customer:
@@ -50,20 +56,28 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - **Previous profile as memory**: Each analysis receives the previous profile so AI builds on it, not from scratch
 - **Strictly actionable output**: Every analytical block (personality, interests, warnings) must convert to concrete messages with timing, purpose, and photo assignments
 - **No generic responses**: AI must personalize based on conversation history, style, and emotional triggers
-- **Action queue persisted**: Actions stored in `manager_actions` DB table with status tracking (pending/done)
+- **Action queue persisted**: Actions stored in `manager_actions` DB table with status tracking (pending/done/dismissed/failed)
+- **Auto-sent marker**: Actions executed by engine have `result: "auto-sent"` in DB
 - Strategy logic: high engagement → SELL, medium → BUILD, low → HOOK
-- **UI Tabs**: Přehled (overview with engine status, stats, pending/done actions, logs), Zákazníci, Vault, Trendy, Broadcast
-- Selected user persists across tab switches (state lifted to parent)
+- **Owner Dashboard**:
+  - Engine status with ⏸ Pause / ▶ Resume button
+  - Auto-sent message log with photos, badges, timestamps
+  - Pending actions (if engine was paused) with manual "Odesláno" / "Zahodit" buttons
+  - Vault photo thumbnails inline in action cards
+  - Clickable status boxes navigate to filtered customer list
+  - Strategy/buying potential/relationship stage breakdowns
 
 ### Content Vault
 - Upload photos/videos/audio content with tags and categories
 - Content stored in `uploads/` directory, metadata in `content_items` table
 - AI automatically categorizes photos (teasing/cute/explicit/casual) and assigns to scenarios
 - Track usage count per content item
+- Vault photos displayed inline in action cards when engine recommends them
 
 ### Key API Endpoints
 - `POST /api/manager/analyze/:userId` — trigger manual analysis (uses engine)
-- `GET /api/manager/engine-status` — engine running state, last/next scan, recent logs
+- `GET /api/manager/engine-status` — engine running state, paused state, last/next scan, recent logs, delayed count
+- `POST /api/manager/engine-pause` — pause/resume engine (`{ paused: true/false }`)
 - `GET /api/manager/actions` — list pending/done actions
 - `PATCH /api/manager/actions/:id` — update action status
 - `GET /api/manager/logs` — engine activity log
@@ -87,7 +101,7 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 ## Key Files
 
 - `server/routes.ts` — All API routes (auth, chat, agent, admin, manager)
-- `server/manager-engine.ts` — Autonomous AI manager engine (scan, analyze, action queue)
+- `server/manager-engine.ts` — Autonomous AI manager engine (scan, analyze, auto-execute, delayed queue)
 - `server/index.ts` — Express setup, session config, engine startup
 - `server/storage.ts` — Database CRUD operations (incl. manager_actions, manager_log)
 - `server/static.ts` — Production static file serving
@@ -103,3 +117,6 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - Old profiles (without `actionQueue`) fall back to showing `suggestedMessages`
 - Auth: owner login `POST /api/auth/login` with `{ password: "owner2025", role: "owner", username: "Manager" }`
 - `package.json` uses `"type": "module"` — CommonJS scripts need `.cjs` extension
+- Engine auto-execution: `executeAction()` calls `storage.createMessage()` directly into conversation
+- Delayed queue: in-memory array, processed every 30s, checks if action still "pending" before executing
+- Engine pause: `setEnginePaused(true)` stops all auto-sending, backlog processing, and delayed queue

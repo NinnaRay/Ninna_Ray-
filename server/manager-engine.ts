@@ -7,8 +7,10 @@ const openai = new OpenAI({
 });
 
 let isRunning = false;
+let enginePaused = false;
 let lastFullScan = 0;
 const SCAN_INTERVAL = 10 * 60 * 1000;
+const DELAYED_QUEUE: { actionId: number; userId: number; message: string; photoId?: number; executeAt: number }[] = [];
 const logs: { time: string; event: string; detail: string }[] = [];
 
 function log(event: string, detail: string = "") {
@@ -22,10 +24,17 @@ function log(event: string, detail: string = "") {
 export function getManagerStatus() {
   return {
     isRunning,
+    isPaused: enginePaused,
     lastFullScan: lastFullScan ? new Date(lastFullScan).toISOString() : null,
     nextScan: lastFullScan ? new Date(lastFullScan + SCAN_INTERVAL).toISOString() : null,
     recentLogs: logs.slice(-30),
+    pendingDelayed: DELAYED_QUEUE.length,
   };
+}
+
+export function setEnginePaused(paused: boolean) {
+  enginePaused = paused;
+  log(paused ? "engine_paused" : "engine_resumed", paused ? "Owner pozastavil engine" : "Owner obnovil engine");
 }
 
 async function analyzeUser(userId: number, userName: string): Promise<any | null> {
@@ -211,6 +220,97 @@ Vrať ČISTÝ JSON (bez markdown):
   }
 }
 
+function parseTimingToMs(timing: string): number {
+  if (!timing || timing === "teď" || timing === "hned") return 0;
+  const match = timing.match(/za\s*(\d+)\s*(h|min|m)/i);
+  if (match) {
+    const val = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit === "h") return val * 60 * 60 * 1000;
+    return val * 60 * 1000;
+  }
+  if (timing.includes("večer")) return 4 * 60 * 60 * 1000;
+  if (timing.includes("zítra")) return 12 * 60 * 60 * 1000;
+  return 0;
+}
+
+async function executeAction(actionId: number, userId: number, message: string, photoId?: number): Promise<boolean> {
+  try {
+    if (enginePaused) {
+      log("exec_skipped", `Action #${actionId} — engine pozastaven`);
+      return false;
+    }
+
+    const convs = await storage.getConversationsByUser(userId);
+    if (convs.length === 0) {
+      log("exec_no_conv", `User ${userId} — žádná konverzace, vytvářím novou`);
+      const user = await storage.getUser(userId);
+      const conv = await storage.createConversation(userId, user?.name || "Chat");
+      await storage.createMessage(conv.id, "assistant", message);
+    } else {
+      const latestConv = convs[0];
+      await storage.createMessage(latestConv.id, "assistant", message);
+    }
+
+    if (photoId) {
+      const vaultItem = await storage.getContentItem(photoId);
+      if (vaultItem) {
+        await storage.incrementContentUsage(photoId);
+      }
+    }
+
+    await storage.updateManagerAction(actionId, {
+      status: "done",
+      result: "auto-sent",
+      executedAt: new Date(),
+    });
+
+    const user = await storage.getUser(userId);
+    log("exec_sent", `→ ${user?.name || userId}: "${message.substring(0, 60)}..." ${photoId ? `[fotka #${photoId}]` : ""}`);
+    return true;
+  } catch (err) {
+    log("exec_error", `Action #${actionId}: ${(err as Error).message}`);
+    await storage.updateManagerAction(actionId, {
+      status: "failed",
+      result: (err as Error).message,
+    });
+    return false;
+  }
+}
+
+async function processDelayedQueue() {
+  if (enginePaused) return;
+  const now = Date.now();
+  const ready = DELAYED_QUEUE.filter(item => item.executeAt <= now);
+  for (const item of ready) {
+    const idx = DELAYED_QUEUE.indexOf(item);
+    if (idx >= 0) DELAYED_QUEUE.splice(idx, 1);
+
+    const action = (await storage.getManagerActions()).find(a => a.id === item.actionId);
+    if (action?.status !== "pending") continue;
+
+    await executeAction(item.actionId, item.userId, item.message, item.photoId);
+  }
+}
+
+async function scheduleOrExecuteAction(actionId: number, userId: number, message: string, timing: string, photoId?: number) {
+  const delayMs = parseTimingToMs(timing);
+
+  if (delayMs === 0) {
+    await executeAction(actionId, userId, message, photoId);
+  } else {
+    DELAYED_QUEUE.push({
+      actionId,
+      userId,
+      message,
+      photoId,
+      executeAt: Date.now() + delayMs,
+    });
+    const user = await storage.getUser(userId);
+    log("exec_scheduled", `${user?.name || userId}: za ${Math.round(delayMs / 60000)} min — "${message.substring(0, 50)}..."`);
+  }
+}
+
 async function runFullScan() {
   if (isRunning) return;
   isRunning = true;
@@ -244,9 +344,9 @@ async function runFullScan() {
         log("analyzing", `${user.name} (${msgCount} zpráv)`);
         const profile = await analyzeUser(user.id, user.name);
 
-        if (profile?.actionQueue) {
+        if (profile?.actionQueue && !enginePaused) {
           for (const action of profile.actionQueue) {
-            await storage.createManagerAction({
+            const created = await storage.createManagerAction({
               userId: user.id,
               type: "message",
               message: action.message,
@@ -254,6 +354,7 @@ async function runFullScan() {
               purpose: action.purpose,
               timing: action.timing,
             });
+            await scheduleOrExecuteAction(created.id, user.id, action.message, action.timing || "teď", action.photoId || undefined);
             actions++;
           }
         }
@@ -272,19 +373,41 @@ async function runFullScan() {
   }
 }
 
+async function executePendingBacklog() {
+  try {
+    const actions = await storage.getManagerActions();
+    const pending = actions.filter(a => a.status === "pending");
+    if (pending.length === 0) return;
+    log("backlog_start", `${pending.length} starých nevyřízených akcí — spouštím odeslání`);
+    let sent = 0;
+    for (const action of pending.reverse()) {
+      if (enginePaused) { log("backlog_paused", `Pozastaveno po ${sent} akcích`); break; }
+      if (!action.message || !action.userId) continue;
+      await executeAction(action.id, action.userId, action.message, action.photoId || undefined);
+      sent++;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    log("backlog_complete", `Odesláno ${sent}/${pending.length} starých akcí`);
+  } catch (err) {
+    log("backlog_error", (err as Error).message);
+  }
+}
+
 export function startManagerEngine() {
   log("engine_start", "AI Manager Engine spuštěn — autonomní režim");
-  setTimeout(() => runFullScan(), 5000);
+  setTimeout(() => executePendingBacklog(), 3000);
+  setTimeout(() => runFullScan(), 10000);
   setInterval(() => runFullScan(), SCAN_INTERVAL);
+  setInterval(() => processDelayedQueue(), 30 * 1000);
 }
 
 export async function triggerAnalysis(userId: number, userName: string) {
   log("manual_trigger", `${userName} (${userId})`);
   const profile = await analyzeUser(userId, userName);
 
-  if (profile?.actionQueue) {
+  if (profile?.actionQueue && !enginePaused) {
     for (const action of profile.actionQueue) {
-      await storage.createManagerAction({
+      const created = await storage.createManagerAction({
         userId,
         type: "message",
         message: action.message,
@@ -292,6 +415,7 @@ export async function triggerAnalysis(userId: number, userName: string) {
         purpose: action.purpose,
         timing: action.timing,
       });
+      await scheduleOrExecuteAction(created.id, userId, action.message, action.timing || "teď", action.photoId || undefined);
     }
   }
 
@@ -306,9 +430,9 @@ export async function onNewMessage(userId: number, userName: string) {
     log("auto_reanalyze", `${userName} — nová zpráva, spouštím re-analýzu`);
     try {
       const profile = await analyzeUser(userId, userName);
-      if (profile?.actionQueue) {
+      if (profile?.actionQueue && !enginePaused) {
         for (const action of profile.actionQueue) {
-          await storage.createManagerAction({
+          const created = await storage.createManagerAction({
             userId,
             type: "message",
             message: action.message,
@@ -316,8 +440,9 @@ export async function onNewMessage(userId: number, userName: string) {
             purpose: action.purpose,
             timing: action.timing,
           });
+          await scheduleOrExecuteAction(created.id, userId, action.message, action.timing || "teď", action.photoId || undefined);
         }
-        log("auto_actions", `${userName}: ${profile.actionQueue.length} nových akcí`);
+        log("auto_actions", `${userName}: ${profile.actionQueue.length} nových akcí auto-odesláno`);
       }
     } catch (err) {
       log("auto_reanalyze_error", (err as Error).message);

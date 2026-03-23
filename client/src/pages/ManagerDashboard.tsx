@@ -855,9 +855,11 @@ function BroadcastTab() {
 
 type EngineStatus = {
   isRunning: boolean;
+  isPaused: boolean;
   lastFullScan: string | null;
   nextScan: string | null;
   recentLogs: { time: string; event: string; detail: string }[];
+  pendingDelayed: number;
 };
 
 type ManagerActionRecord = {
@@ -959,20 +961,29 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      <div className={`flex items-center gap-3 p-3 rounded-xl border ${engineStatus?.isRunning ? "bg-amber-500/10 border-amber-500/30" : "bg-emerald-500/10 border-emerald-500/30"}`}>
-        <div className={`w-3 h-3 rounded-full ${engineStatus?.isRunning ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
+      <div className={`flex items-center gap-3 p-3 rounded-xl border ${engineStatus?.isPaused ? "bg-red-500/10 border-red-500/30" : engineStatus?.isRunning ? "bg-amber-500/10 border-amber-500/30" : "bg-emerald-500/10 border-emerald-500/30"}`}>
+        <div className={`w-3 h-3 rounded-full ${engineStatus?.isPaused ? "bg-red-400" : engineStatus?.isRunning ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse"}`} />
         <div className="flex-1">
-          <p className={`text-sm font-bold ${engineStatus?.isRunning ? "text-amber-300" : "text-emerald-300"}`}>
-            {engineStatus?.isRunning ? "⏳ AI Manager analyzuje..." : "✓ AI Manager aktivní"}
+          <p className={`text-sm font-bold ${engineStatus?.isPaused ? "text-red-300" : engineStatus?.isRunning ? "text-amber-300" : "text-emerald-300"}`}>
+            {engineStatus?.isPaused ? "⏸ Engine pozastaven" : engineStatus?.isRunning ? "⏳ Analyzuje zákazníky..." : "✓ Engine běží — odesílá zprávy"}
           </p>
           <p className="text-[10px] text-neutral-400">
             {engineStatus?.lastFullScan ? `Poslední scan: ${formatDistanceToNow(new Date(engineStatus.lastFullScan), { locale: cs, addSuffix: true })}` : "První scan se připravuje..."}
             {engineStatus?.nextScan && ` · Další: ${formatDistanceToNow(new Date(engineStatus.nextScan), { locale: cs, addSuffix: true })}`}
+            {(engineStatus?.pendingDelayed || 0) > 0 && ` · ${engineStatus!.pendingDelayed} naplánovaných`}
           </p>
         </div>
+        <button onClick={async () => {
+          const newState = !engineStatus?.isPaused;
+          await fetch("/api/manager/engine-pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paused: newState }) });
+          qc.invalidateQueries({ queryKey: ["/api/manager/engine-status"] });
+        }} data-testid="button-toggle-engine"
+          className={`text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors ${engineStatus?.isPaused ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-red-600/80 hover:bg-red-500 text-white"}`}>
+          {engineStatus?.isPaused ? "▶ Spustit" : "⏸ Pozastavit"}
+        </button>
         <button onClick={() => setShowLogs(!showLogs)} data-testid="button-toggle-logs"
           className="text-[10px] text-neutral-500 hover:text-neutral-300 transition-colors px-2 py-1 rounded bg-neutral-800/50">
-          {showLogs ? "Skrýt log" : "📋 Log"}
+          {showLogs ? "Skrýt" : "📋"}
         </button>
       </div>
 
@@ -1027,7 +1038,9 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-bold text-white">📨 Fronta zpráv k odeslání ({filteredPending.length})</p>
+          <p className="text-xs font-bold text-white">
+            {filteredPending.length > 0 ? `⏳ Čekající na odeslání (${filteredPending.length})` : `✓ Vše odesláno — ${doneActions.length} zpráv`}
+          </p>
           <div className="flex gap-1">
             {(["all", "build", "sell", "hook"] as const).map(f => (
               <button key={f} onClick={() => setActionFilter(f)} data-testid={`filter-action-${f}`}
@@ -1128,20 +1141,34 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
       {doneActions.length > 0 && (
         <div className="space-y-2">
           <button onClick={() => setShowDone(!showDone)} data-testid="btn-toggle-done"
-            className="flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-widest hover:text-neutral-300 transition-colors">
+            className="flex items-center gap-2 text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors">
             <span>{showDone ? "▼" : "▶"}</span>
-            <span>✅ Provedené ({doneActions.length})</span>
+            <span>✅ Odesláno manažerem ({doneActions.length} zpráv)</span>
           </button>
           <AnimatePresence>
             {showDone && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-1">
-                {doneActions.slice(0, 20).map(action => (
-                  <div key={action.id} className="bg-neutral-900/50 border border-neutral-800/50 rounded-xl p-2.5 flex items-center gap-2 opacity-60">
-                    <span className="text-[10px] text-emerald-400">✓</span>
-                    <span className="text-xs text-neutral-300 truncate flex-1">{userNameMap.get(action.userId!) || "?"}: {action.message?.substring(0, 80)}</span>
-                    {action.executedAt && <span className="text-[9px] text-neutral-600 shrink-0">{formatDistanceToNow(new Date(action.executedAt), { locale: cs, addSuffix: true })}</span>}
-                  </div>
-                ))}
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-1.5">
+                {doneActions.slice(0, 30).map(action => {
+                  const pCfg = purposeConfig[action.purpose || "build"] || purposeConfig.build;
+                  const vaultItem = action.photoId ? vaultMap.get(action.photoId) : null;
+                  return (
+                    <div key={action.id} className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-2.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-emerald-400">✓</span>
+                          <span className="text-xs font-bold text-neutral-300">{userNameMap.get(action.userId!) || "?"}</span>
+                          <span className={`text-[8px] font-bold px-1 py-0.5 rounded border ${pCfg.cls}`}>{pCfg.icon}</span>
+                          {action.result === "auto-sent" && <span className="text-[8px] bg-emerald-500/20 text-emerald-400 px-1 py-0.5 rounded">AUTO</span>}
+                        </div>
+                        {action.executedAt && <span className="text-[9px] text-neutral-600">{formatDistanceToNow(new Date(action.executedAt), { locale: cs, addSuffix: true })}</span>}
+                      </div>
+                      <p className="text-xs text-neutral-400 leading-relaxed">{action.message?.substring(0, 120)}{(action.message?.length || 0) > 120 ? "..." : ""}</p>
+                      {vaultItem && isImgFile(vaultItem.filename) && (
+                        <img src={`/uploads/${vaultItem.filename}`} alt="" className="w-10 h-10 rounded object-cover border border-neutral-700 inline-block" />
+                      )}
+                    </div>
+                  );
+                })}
               </motion.div>
             )}
           </AnimatePresence>
