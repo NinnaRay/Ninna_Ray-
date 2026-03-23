@@ -7,7 +7,7 @@ const openai = new OpenAI({
 });
 
 let isRunning = false;
-let enginePaused = false;
+let enginePaused = true;
 let lastFullScan = 0;
 const SCAN_INTERVAL = 10 * 60 * 1000;
 const DELAYED_QUEUE: { actionId: number; userId: number; message: string; photoId?: number; executeAt: number }[] = [];
@@ -35,6 +35,10 @@ export function getManagerStatus() {
 export function setEnginePaused(paused: boolean) {
   enginePaused = paused;
   log(paused ? "engine_paused" : "engine_resumed", paused ? "Owner pozastavil engine" : "Owner obnovil engine");
+  if (!paused) {
+    setTimeout(() => executePendingBacklog(), 2000);
+    setTimeout(() => runFullScan(), 5000);
+  }
 }
 
 async function analyzeUser(userId: number, userName: string): Promise<any | null> {
@@ -394,10 +398,10 @@ async function executePendingBacklog() {
 }
 
 export function startManagerEngine() {
-  log("engine_start", "AI Manager Engine spuštěn — autonomní režim");
-  setTimeout(() => executePendingBacklog(), 3000);
-  setTimeout(() => runFullScan(), 10000);
-  setInterval(() => runFullScan(), SCAN_INTERVAL);
+  log("engine_start", "AI Manager Engine spuštěn — POZASTAVENÝ (čeká na spuštění ownerem)");
+  setInterval(() => {
+    if (!enginePaused) runFullScan();
+  }, SCAN_INTERVAL);
   setInterval(() => processDelayedQueue(), 30 * 1000);
 }
 
