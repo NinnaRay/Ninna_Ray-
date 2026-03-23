@@ -608,6 +608,125 @@ Analyzuj a vrať JSON (bez markdown, čistý JSON):
     }
   });
 
+  // ─── Pricing strategy analysis ─────────────────────────────────────────────
+
+  app.post("/api/manager/pricing-strategy", requireOwner, async (_req, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      const allConvs = await storage.getAllConversations();
+      const allMsgs = await storage.getAllMessages();
+      const vaultItems = await storage.getAllContentItems();
+
+      const profiles = allUsers
+        .filter(u => u.aiProfile)
+        .map(u => {
+          const p = u.aiProfile as any;
+          return {
+            name: u.name,
+            engagement: p?.engagementScore || 0,
+            buyingPotential: p?.buyingPotential || "neznámý",
+            status: p?.status || "new",
+            strategy: p?.strategy || "",
+            interests: p?.interests || [],
+          };
+        });
+
+      const highEngagement = profiles.filter(p => p.engagement >= 70).length;
+      const mediumEngagement = profiles.filter(p => p.engagement >= 40 && p.engagement < 70).length;
+      const lowEngagement = profiles.filter(p => p.engagement < 40).length;
+
+      const recentTopics = allMsgs
+        .filter(m => m.role === "user")
+        .slice(0, 150)
+        .map(m => m.content)
+        .join("\n");
+
+      const prompt = `Jsi top expert na OnlyFans monetizaci, pricing strategie a analýzu trhu adult content creatorů. Tvým úkolem je navrhnout OPTIMÁLNÍ cenovou strategii pro maximalizaci výdělku.
+
+AKTUÁLNÍ SITUACE AGENTURY "Ninna Ray":
+- Aktuální cena: $14.99/měsíc (základní předplatné z OnlyFans)
+- Celkem zákazníků: ${allUsers.length}
+- Celkem konverzací: ${allConvs.length}
+- Celkem zpráv: ${allMsgs.length}
+- Obsah ve vaultu: ${vaultItems.length} položek
+- Vysoký engagement (70+): ${highEngagement} zákazníků
+- Střední engagement (40-69): ${mediumEngagement} zákazníků
+- Nízký engagement (<40): ${lowEngagement} zákazníků
+
+PROFILY ZÁKAZNÍKŮ:
+${JSON.stringify(profiles.slice(0, 30), null, 2)}
+
+POSLEDNÍ TÉMATA OD ZÁKAZNÍKŮ:
+${recentTopics.slice(0, 2000)}
+
+ANALYZUJ TRH A NAVRHNI STRATEGII. Zvaž:
+1. Konkurenční ceny na OnlyFans, Fansly, Fanvue v podobné kategorii
+2. Psychologii cen (charm pricing, anchoring, tiered value)
+3. Aktuální trendy v adult content monetizaci (PPV pricing, tips, custom content, bundles)
+4. Konverzní poměry při různých cenových hladinách
+5. Upsell a cross-sell příležitosti
+6. Sezónní faktory a promo strategie
+
+Vrať POUZE čistý JSON (bez markdown):
+{
+  "marketAnalysis": {
+    "averageCompetitorPrice": "<průměrná cena konkurence>",
+    "priceRange": "<rozsah cen v kategorii>",
+    "marketPosition": "<kde se Ninna nachází vůči trhu>",
+    "demandTrends": ["<trend 1>", "<trend 2>", "<trend 3>"]
+  },
+  "recommendedPricing": {
+    "subscription": {
+      "monthly": {"price": "<doporučená cena USD>", "reasoning": "<proč tato cena>"},
+      "quarterly": {"price": "<cena USD>", "reasoning": "<proč>"},
+      "yearly": {"price": "<cena USD>", "reasoning": "<proč>", "savings": "<kolik ušetří v %>"}
+    },
+    "ppvContent": [
+      {"type": "<typ obsahu>", "priceRange": "<cena USD>", "description": "<co přesně>"}
+    ],
+    "customContent": [
+      {"type": "<typ>", "price": "<cena USD>", "description": "<popis>"}
+    ],
+    "tips": {
+      "suggestedAmounts": ["<částka 1>", "<částka 2>", "<částka 3>"],
+      "tipMenuIdeas": ["<nápad 1>", "<nápad 2>", "<nápad 3>"]
+    }
+  },
+  "revenueProjection": {
+    "currentEstimate": "<odhad aktuálního měsíčního výdělku>",
+    "optimizedEstimate": "<odhad po optimalizaci>",
+    "growthPotential": "<% nárůst>",
+    "keyDrivers": ["<driver 1>", "<driver 2>", "<driver 3>"]
+  },
+  "promoStrategy": [
+    {"name": "<název promo>", "discount": "<sleva>", "timing": "<kdy spustit>", "target": "<pro koho>", "expectedImpact": "<dopad>"}
+  ],
+  "upsellFunnel": [
+    {"step": 1, "action": "<co udělat>", "conversion": "<očekávaná konverze>"},
+    {"step": 2, "action": "<co udělat>", "conversion": "<konverze>"}
+  ],
+  "warnings": ["<varování a rizika>"],
+  "actionPlan": [
+    {"priority": "vysoká|střední", "action": "<co udělat>", "expectedResult": "<výsledek>", "timeline": "<do kdy>"}
+  ],
+  "summary": "<5-6 vět celkové shrnutí strategie a hlavní doporučení pro maximalizaci výdělku>",
+  "analyzedAt": "${new Date().toISOString()}"
+}`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+      });
+
+      const result = JSON.parse(completion.choices[0]?.message?.content || "{}");
+      res.json(result);
+    } catch (err) {
+      console.error("Pricing strategy error:", err);
+      res.status(500).json({ message: "Chyba při analýze cenové strategie" });
+    }
+  });
+
   // ─── Broadcast message (owner/agent) ────────────────────────────────────────
 
   app.post("/api/manager/broadcast", requireOwner, async (req, res) => {
