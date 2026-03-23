@@ -56,6 +56,7 @@ type ManagerUser = {
   lastActivity: string | null;
   aiProfile: AiProfile | null;
   aiProfileUpdatedAt: string | null;
+  stripeCustomerId?: string | null;
 };
 
 type ContentItem = {
@@ -1245,9 +1246,106 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
   );
 }
 
+function PaymentsTab({ users }: { users: ManagerUser[] }) {
+  const { data: stripeStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/stripe/status"],
+    queryFn: () => fetch("/api/stripe/status").then(r => r.json()),
+  });
+
+  const { data: productsData } = useQuery<{ products: any[]; connected: boolean }>({
+    queryKey: ["/api/stripe/products"],
+    queryFn: () => fetch("/api/stripe/products").then(r => r.json()),
+    enabled: !!stripeStatus?.connected,
+  });
+
+  const connected = stripeStatus?.connected || false;
+  const products = productsData?.products || [];
+  const usersWithStripe = users.filter(u => u.stripeCustomerId);
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className={`p-4 rounded-xl border ${connected ? "bg-emerald-900/20 border-emerald-700/40" : "bg-amber-900/20 border-amber-700/40"}`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-3 h-3 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
+          <div>
+            <h3 className="font-bold text-sm" data-testid="text-stripe-status">
+              {connected ? "Stripe propojený" : "Stripe nepropojený"}
+            </h3>
+            <p className="text-xs text-neutral-400">
+              {connected
+                ? `${products.length} produktů · ${usersWithStripe.length} zákazníků s platbou`
+                : "Propoj Stripe v Integracích pro aktivaci plateb"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {connected && products.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-neutral-300 mb-3">Produkty</h3>
+          <div className="space-y-2">
+            {products.map((product: any) => (
+              <div key={product.id} className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800" data-testid={`payment-product-${product.id}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-sm">{product.name}</span>
+                    {product.description && (
+                      <p className="text-xs text-neutral-500 mt-0.5">{product.description}</p>
+                    )}
+                  </div>
+                  <div className="text-right space-y-1">
+                    {product.prices.map((price: any) => {
+                      const amount = (price.unitAmount / 100).toFixed(0);
+                      const interval = price.recurring?.interval;
+                      const label = interval === "month" ? "/měs" : interval === "year" ? "/rok" : "";
+                      return (
+                        <div key={price.id} className="text-xs">
+                          <span className="font-bold text-emerald-400">{amount} {(price.currency || "czk").toUpperCase()}</span>
+                          <span className="text-neutral-500">{label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {connected && usersWithStripe.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-neutral-300 mb-3">Zákazníci s platbou</h3>
+          <div className="space-y-2">
+            {usersWithStripe.map(user => (
+              <div key={user.id} className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 flex items-center justify-between" data-testid={`payment-user-${user.id}`}>
+                <span className="text-sm font-medium">{user.name}</span>
+                <span className="text-xs text-neutral-500 font-mono">{user.stripeCustomerId}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!connected && (
+        <div className="text-center py-8">
+          <div className="text-4xl mb-3">💳</div>
+          <h3 className="font-bold text-lg mb-2">Připrav si platby</h3>
+          <div className="text-sm text-neutral-400 space-y-2 max-w-md mx-auto">
+            <p>1. Vytvoř si účet na <a href="https://stripe.com" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline">stripe.com</a></p>
+            <p>2. Propoj Stripe v záložce Integrace (vlevo)</p>
+            <p>3. Produkty se vytvoří automaticky</p>
+            <p>4. Zákazníci uvidí tlačítko VIP v chatu</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ManagerDashboard() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast" | "payments">("overview");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [initialFilter, setInitialFilter] = useState<string | undefined>(undefined);
   const qc = useQueryClient();
@@ -1274,6 +1372,7 @@ export default function ManagerDashboard() {
     { id: "vault" as const, icon: "📦", label: "Vault" },
     { id: "trends" as const, icon: "📊", label: "Trendy" },
     { id: "broadcast" as const, icon: "📢", label: "Broadcast" },
+    { id: "payments" as const, icon: "💳", label: "Platby" },
   ];
 
   return (
@@ -1309,6 +1408,7 @@ export default function ManagerDashboard() {
         {activeTab === "vault" && <VaultTab />}
         {activeTab === "trends" && <TrendsTab />}
         {activeTab === "broadcast" && <BroadcastTab />}
+        {activeTab === "payments" && <PaymentsTab users={users} />}
       </div>
     </div>
   );

@@ -98,15 +98,32 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - `AGENT_PASSWORD` — Password for agent login (default: `agent2025`)
 - `OWNER_PASSWORD` — Password for owner login (default: `owner2025`)
 
+### Stripe Payment Integration
+- **Status**: Infrastructure ready, waiting for Stripe account connection
+- **Stripe not yet connected**: App works fine without it — shows "Platby se připravují" to customers
+- **When connected**: Run `npx tsx scripts/seed-products.ts` to create products, then payments activate automatically
+- **Webhook**: Route registered BEFORE `express.json()` in `server/index.ts`
+- **Checkout**: Auto-detects subscription vs one-time payment mode from price type
+- **Products planned**: VIP subscription (monthly/yearly CZK), PPV content, Custom content, Tips
+- **Customer flow**: Chat → VIP crown button → /payment → Stripe Checkout → /payment/success
+- **Owner view**: Manager dashboard → Platby tab — shows Stripe status, products, paying customers
+- **Files**: `server/stripeClient.ts`, `server/webhookHandlers.ts`, `server/stripeService.ts`, `scripts/seed-products.ts`
+- **Pages**: `/payment`, `/payment/success`, `/payment/cancel`
+
 ## Key Files
 
-- `server/routes.ts` — All API routes (auth, chat, agent, admin, manager)
+- `server/routes.ts` — All API routes (auth, chat, agent, admin, manager, stripe)
 - `server/manager-engine.ts` — Autonomous AI manager engine (scan, analyze, auto-execute, delayed queue)
-- `server/index.ts` — Express setup, session config, engine startup
-- `server/storage.ts` — Database CRUD operations (incl. manager_actions, manager_log)
+- `server/index.ts` — Express setup, session config, Stripe webhook + init, engine startup
+- `server/storage.ts` — Database CRUD operations (incl. manager_actions, manager_log, stripe customer ID)
+- `server/stripeClient.ts` — Stripe credentials from Replit connections API
+- `server/stripeService.ts` — Stripe API operations (checkout, portal, products query)
+- `server/webhookHandlers.ts` — Stripe webhook processing via stripe-replit-sync
 - `server/static.ts` — Production static file serving
-- `shared/schema.ts` — Drizzle schema + Zod types (incl. managerActions, managerLog tables)
-- `client/src/pages/ManagerDashboard.tsx` — AI Manager dashboard (overview, customers, vault, trends, broadcast)
+- `shared/schema.ts` — Drizzle schema + Zod types (users with stripeCustomerId, managerActions, managerLog)
+- `client/src/pages/ManagerDashboard.tsx` — AI Manager dashboard (overview, customers, vault, trends, broadcast, payments)
+- `client/src/pages/Payment.tsx` — Customer payment page with product cards
+- `scripts/seed-products.ts` — Creates products in Stripe (run after connecting)
 
 ## Critical Architecture Notes
 

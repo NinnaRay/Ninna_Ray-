@@ -30,6 +30,7 @@ export interface IStorage {
   updateManagerAction(id: number, updates: Partial<{ status: string; result: string; executedAt: Date }>): Promise<void>;
   addManagerLog(event: string, detail?: string): Promise<void>;
   getManagerLogs(limit?: number): Promise<ManagerLog[]>;
+  updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -168,6 +169,12 @@ export class DatabaseStorage implements IStorage {
 
   async getManagerLogs(limit = 50): Promise<ManagerLog[]> {
     return db.select().from(managerLog).orderBy(desc(managerLog.createdAt)).limit(limit);
+  }
+
+  async updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<void> {
+    await db.update(users)
+      .set({ stripeCustomerId })
+      .where(eq(users.id, userId));
   }
 }
 

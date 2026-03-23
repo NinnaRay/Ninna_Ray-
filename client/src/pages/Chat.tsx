@@ -3,7 +3,7 @@ import { useChat } from "@/hooks/use-chat";
 import { ChatBubble } from "@/components/ChatBubble";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, LogOut, ChevronLeft } from "lucide-react";
+import { Send, LogOut, ChevronLeft, Crown } from "lucide-react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -74,9 +74,20 @@ export default function Chat() {
             <span className="text-[10px] text-pink-500 font-bold uppercase tracking-wider">Online</span>
           </div>
         </div>
-        <Button variant="ghost" size="icon" className="text-neutral-400 hover:text-white" onClick={handleLogout}>
-          <LogOut className="w-5 h-5" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-amber-400 hover:text-amber-300"
+            onClick={() => setLocation("/payment")}
+            data-testid="button-vip"
+          >
+            <Crown className="w-5 h-5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="text-neutral-400 hover:text-white" onClick={handleLogout}>
+            <LogOut className="w-5 h-5" />
+          </Button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
