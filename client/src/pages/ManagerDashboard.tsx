@@ -1247,6 +1247,9 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
 }
 
 function PaymentsTab({ users }: { users: ManagerUser[] }) {
+  const [pricingStrategy, setPricingStrategy] = useState<any>(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
+
   const { data: stripeStatus } = useQuery<{ connected: boolean }>({
     queryKey: ["/api/stripe/status"],
     queryFn: () => fetch("/api/stripe/status").then(r => r.json()),
@@ -1261,6 +1264,16 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
   const connected = stripeStatus?.connected || false;
   const products = productsData?.products || [];
   const usersWithStripe = users.filter(u => u.stripeCustomerId);
+
+  const analyzePricing = async () => {
+    setPricingLoading(true);
+    try {
+      const res = await fetch("/api/manager/pricing-strategy", { method: "POST", credentials: "include" });
+      const data = await res.json();
+      setPricingStrategy(data);
+    } catch {}
+    setPricingLoading(false);
+  };
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -1280,9 +1293,223 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
         </div>
       </div>
 
+      <div className="p-4 rounded-xl bg-gradient-to-r from-amber-900/20 to-orange-900/20 border border-amber-700/30">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-white font-bold text-sm">💰 Cenová strategie & Analýza trhu</p>
+            <p className="text-neutral-500 text-xs">AI prozkoumá trh, konkurenci a navrhne optimální ceny</p>
+          </div>
+          <button onClick={analyzePricing} disabled={pricingLoading} data-testid="button-analyze-pricing"
+            className="text-xs bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl font-bold whitespace-nowrap">
+            {pricingLoading ? "Analyzuji trh..." : "Analyzovat trh"}
+          </button>
+        </div>
+        <p className="text-amber-400/60 text-[10px]">Aktuální cena: $14.99/měsíc (OnlyFans)</p>
+      </div>
+
+      {pricingLoading && (
+        <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+          <div className="text-5xl animate-pulse">🧠</div>
+          <p className="text-neutral-400 text-sm">AI analyzuje trh, konkurenci a tvoje zákazníky...</p>
+          <p className="text-neutral-600 text-xs">Může to trvat 15-30 sekund</p>
+        </div>
+      )}
+
+      {pricingStrategy && !pricingLoading && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          {pricingStrategy.summary && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4">
+              <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-2">Shrnutí strategie</p>
+              <p className="text-sm text-emerald-300 leading-relaxed">{pricingStrategy.summary}</p>
+            </div>
+          )}
+
+          {pricingStrategy.marketAnalysis && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
+              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">📊 Analýza trhu</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-neutral-800/60 rounded-lg p-3">
+                  <p className="text-[10px] text-neutral-500 uppercase">Průměr konkurence</p>
+                  <p className="text-sm font-bold text-white">{pricingStrategy.marketAnalysis.averageCompetitorPrice}</p>
+                </div>
+                <div className="bg-neutral-800/60 rounded-lg p-3">
+                  <p className="text-[10px] text-neutral-500 uppercase">Cenový rozsah</p>
+                  <p className="text-sm font-bold text-white">{pricingStrategy.marketAnalysis.priceRange}</p>
+                </div>
+              </div>
+              <div className="mt-3 bg-neutral-800/60 rounded-lg p-3">
+                <p className="text-[10px] text-neutral-500 uppercase mb-1">Pozice na trhu</p>
+                <p className="text-sm text-neutral-300">{pricingStrategy.marketAnalysis.marketPosition}</p>
+              </div>
+              {pricingStrategy.marketAnalysis.demandTrends && (
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {pricingStrategy.marketAnalysis.demandTrends.map((t: string, i: number) => (
+                    <span key={i} className="text-xs bg-blue-500/20 border border-blue-500/30 text-blue-400 px-2 py-1 rounded-lg">{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {pricingStrategy.recommendedPricing && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
+              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">💵 Doporučené ceny</p>
+              
+              {pricingStrategy.recommendedPricing.subscription && (
+                <div className="mb-3">
+                  <p className="text-xs font-bold text-amber-400 mb-2">Předplatné</p>
+                  <div className="space-y-2">
+                    {Object.entries(pricingStrategy.recommendedPricing.subscription).map(([period, data]: [string, any]) => (
+                      <div key={period} className="flex items-center justify-between bg-neutral-800/60 rounded-lg px-3 py-2">
+                        <div>
+                          <span className="text-xs text-neutral-400 capitalize">{period === "monthly" ? "Měsíčně" : period === "quarterly" ? "Čtvrtletně" : "Ročně"}</span>
+                          {data.savings && <span className="text-[10px] text-emerald-400 ml-2">(-{data.savings})</span>}
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-white">{data.price}</span>
+                          <p className="text-[10px] text-neutral-500 max-w-[200px]">{data.reasoning}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {pricingStrategy.recommendedPricing.ppvContent && pricingStrategy.recommendedPricing.ppvContent.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-bold text-purple-400 mb-2">PPV obsah</p>
+                  <div className="space-y-1.5">
+                    {pricingStrategy.recommendedPricing.ppvContent.map((item: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between bg-neutral-800/60 rounded-lg px-3 py-2">
+                        <div><p className="text-xs text-white">{item.type}</p><p className="text-[10px] text-neutral-500">{item.description}</p></div>
+                        <span className="text-sm font-bold text-purple-400">{item.priceRange}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {pricingStrategy.recommendedPricing.customContent && pricingStrategy.recommendedPricing.customContent.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-bold text-pink-400 mb-2">Custom obsah</p>
+                  <div className="space-y-1.5">
+                    {pricingStrategy.recommendedPricing.customContent.map((item: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between bg-neutral-800/60 rounded-lg px-3 py-2">
+                        <div><p className="text-xs text-white">{item.type}</p><p className="text-[10px] text-neutral-500">{item.description}</p></div>
+                        <span className="text-sm font-bold text-pink-400">{item.price}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {pricingStrategy.recommendedPricing.tips && (
+                <div>
+                  <p className="text-xs font-bold text-red-400 mb-2">Tipy & Tip menu</p>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {pricingStrategy.recommendedPricing.tips.suggestedAmounts?.map((a: string, i: number) => (
+                      <span key={i} className="text-xs bg-red-500/20 border border-red-500/30 text-red-400 px-2 py-1 rounded-lg font-bold">{a}</span>
+                    ))}
+                  </div>
+                  {pricingStrategy.recommendedPricing.tips.tipMenuIdeas?.map((idea: string, i: number) => (
+                    <p key={i} className="text-xs text-neutral-400 mb-0.5">• {idea}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {pricingStrategy.revenueProjection && (
+            <div className="bg-gradient-to-r from-emerald-900/20 to-green-900/20 border border-emerald-700/30 rounded-xl p-4">
+              <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-3">📈 Projekce výdělku</p>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="bg-neutral-800/60 rounded-lg p-3 text-center">
+                  <p className="text-[10px] text-neutral-500 uppercase">Aktuální</p>
+                  <p className="text-sm font-bold text-white">{pricingStrategy.revenueProjection.currentEstimate}</p>
+                </div>
+                <div className="bg-neutral-800/60 rounded-lg p-3 text-center">
+                  <p className="text-[10px] text-neutral-500 uppercase">Po optimalizaci</p>
+                  <p className="text-sm font-bold text-emerald-400">{pricingStrategy.revenueProjection.optimizedEstimate}</p>
+                </div>
+                <div className="bg-neutral-800/60 rounded-lg p-3 text-center">
+                  <p className="text-[10px] text-neutral-500 uppercase">Potenciál</p>
+                  <p className="text-sm font-bold text-amber-400">{pricingStrategy.revenueProjection.growthPotential}</p>
+                </div>
+              </div>
+              {pricingStrategy.revenueProjection.keyDrivers?.map((d: string, i: number) => (
+                <p key={i} className="text-xs text-emerald-400/80 mb-0.5">→ {d}</p>
+              ))}
+            </div>
+          )}
+
+          {pricingStrategy.promoStrategy && pricingStrategy.promoStrategy.length > 0 && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
+              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">🎯 Promo strategie</p>
+              <div className="space-y-2">
+                {pricingStrategy.promoStrategy.map((promo: any, i: number) => (
+                  <div key={i} className="bg-neutral-800/60 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-white">{promo.name}</span>
+                      <span className="text-[10px] text-amber-400">{promo.discount}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-neutral-500">
+                      <span>{promo.timing}</span>
+                      <span>•</span>
+                      <span>{promo.target}</span>
+                    </div>
+                    <p className="text-xs text-neutral-400 mt-1">{promo.expectedImpact}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {pricingStrategy.upsellFunnel && pricingStrategy.upsellFunnel.length > 0 && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
+              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">🔄 Upsell funnel</p>
+              <div className="space-y-2">
+                {pricingStrategy.upsellFunnel.map((step: any, i: number) => (
+                  <div key={i} className="flex items-start gap-3 bg-neutral-800/60 rounded-lg px-3 py-2">
+                    <span className="text-lg font-bold text-amber-500 shrink-0">{step.step}</span>
+                    <div>
+                      <p className="text-xs text-white">{step.action}</p>
+                      <p className="text-[10px] text-emerald-400">{step.conversion}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {pricingStrategy.actionPlan && pricingStrategy.actionPlan.length > 0 && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
+              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">Akční plán</p>
+              <div className="space-y-2">
+                {pricingStrategy.actionPlan.map((action: any, i: number) => (
+                  <div key={i} className="flex items-start gap-2 bg-neutral-800/60 rounded-lg px-3 py-2">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 mt-0.5 ${action.priority === "vysoká" ? "text-red-400 bg-red-500/20 border-red-500/30" : "text-orange-400 bg-orange-500/20 border-orange-500/30"}`}>{action.priority}</span>
+                    <div>
+                      <p className="text-xs text-white">{action.action}</p>
+                      <p className="text-[10px] text-neutral-500">{action.expectedResult} • {action.timeline}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {pricingStrategy.warnings && pricingStrategy.warnings.length > 0 && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+              <p className="text-xs font-bold text-red-500 uppercase tracking-widest mb-2">Varování</p>
+              {pricingStrategy.warnings.map((w: string, i: number) => <p key={i} className="text-xs text-red-300">{w}</p>)}
+            </div>
+          )}
+        </motion.div>
+      )}
+
       {connected && products.length > 0 && (
         <div>
-          <h3 className="text-sm font-bold text-neutral-300 mb-3">Produkty</h3>
+          <h3 className="text-sm font-bold text-neutral-300 mb-3">Aktivní produkty</h3>
           <div className="space-y-2">
             {products.map((product: any) => (
               <div key={product.id} className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800" data-testid={`payment-product-${product.id}`}>
@@ -1295,12 +1522,12 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
                   </div>
                   <div className="text-right space-y-1">
                     {product.prices.map((price: any) => {
-                      const amount = (price.unitAmount / 100).toFixed(0);
+                      const amount = (price.unitAmount / 100).toFixed(2);
                       const interval = price.recurring?.interval;
                       const label = interval === "month" ? "/měs" : interval === "year" ? "/rok" : "";
                       return (
                         <div key={price.id} className="text-xs">
-                          <span className="font-bold text-emerald-400">{amount} {(price.currency || "czk").toUpperCase()}</span>
+                          <span className="font-bold text-emerald-400">${amount}</span>
                           <span className="text-neutral-500">{label}</span>
                         </div>
                       );
@@ -1327,7 +1554,7 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
         </div>
       )}
 
-      {!connected && (
+      {!connected && !pricingStrategy && !pricingLoading && (
         <div className="text-center py-8">
           <div className="text-4xl mb-3">💳</div>
           <h3 className="font-bold text-lg mb-2">Připrav si platby</h3>
