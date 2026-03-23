@@ -253,12 +253,65 @@ function ChatHistory({ userIds }: { userIds: number[] }) {
   );
 }
 
+// ─── Detail Action Queue with vault photos ──────────────────────────────────
+
+function DetailActionQueue({ actions, purposeConfig }: { actions: ActionItem[]; purposeConfig: Record<string, { icon: string; label: string; cls: string }> }) {
+  const { data: vaultItems = [] } = useQuery<ContentItem[]>({
+    queryKey: ["/api/vault/items"],
+    queryFn: () => fetch("/api/vault/items").then(r => r.json()),
+  });
+  const vaultMap = new Map(vaultItems.map(v => [v.id, v]));
+  const isImg = (fn: string) => /\.(jpg|jpeg|png|gif|webp)$/i.test(fn);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📨 Fronta zpráv k odeslání</p>
+      {actions.map((action, i) => {
+        const aCfg = purposeConfig[action.purpose] || purposeConfig.build;
+        const vaultItem = action.photoId ? vaultMap.get(action.photoId) : null;
+        const hasPhoto = vaultItem && isImg(vaultItem.filename);
+        return (
+          <div key={i} data-testid={`action-card-${i}`}
+            className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${aCfg.cls}`}>{aCfg.icon} {aCfg.label}</span>
+                <span className="text-[10px] text-neutral-500">⏰ {action.timing}</span>
+              </div>
+              <CopyButton text={action.message} />
+            </div>
+            <div className="bg-neutral-800/60 rounded-lg px-3 py-2">
+              <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">{action.message}</p>
+            </div>
+            {hasPhoto && (
+              <div className="flex items-start gap-3">
+                <button onClick={() => setExpandedIdx(expandedIdx === i ? null : i)} className="shrink-0">
+                  <img src={`/uploads/${vaultItem!.filename}`} alt="Fotka"
+                    className={`rounded-lg border border-pink-500/30 object-cover transition-all cursor-pointer hover:brightness-110 ${expandedIdx === i ? "w-40 h-40" : "w-14 h-14"}`} />
+                </button>
+                <div>
+                  <p className="text-[10px] text-pink-400 font-bold">📸 Fotka #{action.photoId}</p>
+                  {action.photoNote && <p className="text-[10px] text-pink-300">{action.photoNote}</p>}
+                </div>
+              </div>
+            )}
+            {action.photoId && !hasPhoto && (
+              <p className="text-[10px] text-pink-400">📸 Fotka #{action.photoId}{action.photoNote ? ` — ${action.photoNote}` : ""}</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Tab: Customers ──────────────────────────────────────────────────────────
 
-function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: ManagerUser[]; qc: ReturnType<typeof useQueryClient>; selectedGroup: string | null; setSelectedGroup: (g: string | null) => void }) {
+function CustomersTab({ users, qc, selectedGroup, setSelectedGroup, initialFilter }: { users: ManagerUser[]; qc: ReturnType<typeof useQueryClient>; selectedGroup: string | null; setSelectedGroup: (g: string | null) => void; initialFilter?: string }) {
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
-  const [filter, setFilter] = useState<"all" | "hot" | "warm" | "cold" | "new">("all");
+  const [filter, setFilter] = useState<"all" | "hot" | "warm" | "cold" | "new">((initialFilter as any) || "all");
   const [search, setSearch] = useState("");
 
   const analyzeMut = useMutation({
@@ -467,31 +520,7 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: M
                     )}
 
                     {(p.actionQueue || []).length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📨 Fronta zpráv k odeslání</p>
-                        {(p.actionQueue || []).map((action, i) => {
-                          const aCfg = purposeConfig[action.purpose] || purposeConfig.build;
-                          return (
-                            <div key={i} data-testid={`action-card-${i}`}
-                              className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5">
-                                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${aCfg.cls}`}>{aCfg.icon} {aCfg.label}</span>
-                                  <span className="text-[10px] text-neutral-500">⏰ {action.timing}</span>
-                                </div>
-                                <CopyButton text={action.message} />
-                              </div>
-                              <p className="text-sm text-white leading-relaxed">{action.message}</p>
-                              {action.photoId && (
-                                <div className="flex items-center gap-1.5 text-[10px] text-pink-400 bg-pink-500/10 rounded-lg px-2 py-1.5">
-                                  <span>📸 Fotka #{action.photoId}</span>
-                                  {action.photoNote && <span className="text-pink-300">— {action.photoNote}</span>}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <DetailActionQueue actions={p.actionQueue!} purposeConfig={purposeConfig} />
                     )}
 
                     {(p.suggestedMessages || []).length > 0 && !(p.actionQueue || []).length && (
@@ -845,7 +874,8 @@ type ManagerActionRecord = {
   createdAt: string;
 };
 
-function OverviewTab({ users }: { users: ManagerUser[] }) {
+function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?: (tab: "customers", filter?: string) => void }) {
+  const qc = useQueryClient();
   const { data: engineStatus } = useQuery<EngineStatus>({
     queryKey: ["/api/manager/engine-status"],
     refetchInterval: 10000,
@@ -858,8 +888,35 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
     queryFn: () => fetch("/api/manager/actions").then(r => r.json()),
   });
 
+  const { data: vaultItems = [] } = useQuery<ContentItem[]>({
+    queryKey: ["/api/vault/items"],
+    queryFn: () => fetch("/api/vault/items").then(r => r.json()),
+  });
+
+  const vaultMap = new Map(vaultItems.map(v => [v.id, v]));
+
+  const markDone = async (id: number) => {
+    await fetch(`/api/manager/actions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "done" }),
+    });
+    qc.invalidateQueries({ queryKey: ["/api/manager/actions"] });
+  };
+
+  const dismissAction = async (id: number) => {
+    await fetch(`/api/manager/actions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "dismissed" }),
+    });
+    qc.invalidateQueries({ queryKey: ["/api/manager/actions"] });
+  };
+
   const [actionFilter, setActionFilter] = useState<"all" | "build" | "sell" | "hook">("all");
   const [showLogs, setShowLogs] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  const [expandedPhoto, setExpandedPhoto] = useState<number | null>(null);
 
   const groups = groupUsers(users);
   const totalMessages = users.reduce((s, u) => s + u.totalMessages, 0);
@@ -898,6 +955,8 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
   const sellPct = pendingActions.length ? Math.round(pendingActions.filter(a => a.purpose === "sell").length / pendingActions.length * 100) : 0;
   const hookPct = pendingActions.length ? Math.round(pendingActions.filter(a => a.purpose === "hook").length / pendingActions.length * 100) : 0;
 
+  const isImgFile = (fn: string) => /\.(jpg|jpeg|png|gif|webp)$/i.test(fn);
+
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className={`flex items-center gap-3 p-3 rounded-xl border ${engineStatus?.isRunning ? "bg-amber-500/10 border-amber-500/30" : "bg-emerald-500/10 border-emerald-500/30"}`}>
@@ -933,40 +992,161 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        {[
-          { label: "Zákazníci", value: groups.length, icon: "👥", sub: `${analyzed} analýz` },
-          { label: "Ø Engagement", value: `${Math.round(avgEngagement)}%`, icon: "📊", sub: avgEngagement >= 60 ? "silný" : avgEngagement >= 35 ? "střední" : "nízký" },
-          { label: "Čekající akce", value: pendingActions.length, icon: "📨", sub: `${doneActions.length} provedeno` },
-          { label: "Zpráv celkem", value: totalMessages, icon: "💬", sub: `${users.length} sessions` },
-        ].map((stat, i) => (
-          <div key={i} className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid={`stat-card-${i}`}>
-            <p className="text-lg">{stat.icon}</p>
-            <p className="text-lg font-bold text-white">{stat.value}</p>
-            <p className="text-[10px] text-neutral-500">{stat.label}</p>
-            <p className="text-[9px] text-neutral-600">{stat.sub}</p>
-          </div>
+      <div className="grid grid-cols-4 gap-2">
+        {([
+          { status: "hot" as const, count: hotCount, icon: "🔥", label: "Horký", bg: "bg-red-500/10", border: "border-red-500/30", text: "text-red-400", textSub: "text-red-300" },
+          { status: "warm" as const, count: warmCount, icon: "⚡", label: "Teplý", bg: "bg-orange-500/10", border: "border-orange-500/30", text: "text-orange-400", textSub: "text-orange-300" },
+          { status: "cold" as const, count: coldCount, icon: "❄️", label: "Studený", bg: "bg-blue-500/10", border: "border-blue-500/30", text: "text-blue-400", textSub: "text-blue-300" },
+          { status: "new" as const, count: newCount, icon: "🌱", label: "Nový", bg: "bg-neutral-700/30", border: "border-neutral-600", text: "text-neutral-400", textSub: "text-neutral-400" },
+        ]).map(s => (
+          <button key={s.status} onClick={() => onNavigate?.("customers", s.status)} data-testid={`nav-status-${s.status}`}
+            className={`${s.bg} border ${s.border} rounded-xl p-2.5 text-center hover:brightness-125 transition-all cursor-pointer`}>
+            <p className={`text-lg font-bold ${s.text}`}>{s.count}</p>
+            <p className={`text-[9px] ${s.textSub}`}>{s.icon} {s.label}</p>
+          </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-red-400">{hotCount}</p>
-          <p className="text-[9px] text-red-300">🔥 Horký</p>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="stat-card-0">
+          <p className="text-lg font-bold text-white">{groups.length}</p>
+          <p className="text-[10px] text-neutral-500">👥 Zákazníci</p>
+          <p className="text-[9px] text-neutral-600">{analyzed} analýz</p>
         </div>
-        <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-orange-400">{warmCount}</p>
-          <p className="text-[9px] text-orange-300">⚡ Teplý</p>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="stat-card-1">
+          <p className={`text-lg font-bold ${avgEngagement >= 60 ? "text-red-400" : avgEngagement >= 35 ? "text-orange-400" : "text-blue-400"}`}>{Math.round(avgEngagement)}%</p>
+          <p className="text-[10px] text-neutral-500">📊 Engagement</p>
+          <p className="text-[9px] text-neutral-600">{avgEngagement >= 60 ? "silný" : avgEngagement >= 35 ? "střední" : "nízký"}</p>
         </div>
-        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-blue-400">{coldCount}</p>
-          <p className="text-[9px] text-blue-300">❄️ Studený</p>
-        </div>
-        <div className="bg-neutral-700/30 border border-neutral-600 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-neutral-400">{newCount}</p>
-          <p className="text-[9px] text-neutral-400">🌱 Nový</p>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="stat-card-2">
+          <p className="text-lg font-bold text-emerald-400">{pendingActions.length}</p>
+          <p className="text-[10px] text-neutral-500">📨 K odeslání</p>
+          <p className="text-[9px] text-neutral-600">{doneActions.length} hotovo</p>
         </div>
       </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold text-white">📨 Fronta zpráv k odeslání ({filteredPending.length})</p>
+          <div className="flex gap-1">
+            {(["all", "build", "sell", "hook"] as const).map(f => (
+              <button key={f} onClick={() => setActionFilter(f)} data-testid={`filter-action-${f}`}
+                className={`text-[9px] px-2 py-1 rounded transition-colors ${actionFilter === f ? "bg-neutral-700 text-white" : "text-neutral-600 hover:text-neutral-400"}`}>
+                {f === "all" ? "Vše" : purposeConfig[f].icon + " " + purposeConfig[f].label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {pendingActions.length > 0 && (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-2.5">
+            <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden">
+              {buildPct > 0 && <div className="bg-blue-500 h-full rounded-full" style={{ width: `${buildPct}%` }} />}
+              {sellPct > 0 && <div className="bg-yellow-500 h-full rounded-full" style={{ width: `${sellPct}%` }} />}
+              {hookPct > 0 && <div className="bg-purple-500 h-full rounded-full" style={{ width: `${hookPct}%` }} />}
+            </div>
+            <div className="flex justify-between mt-1">
+              <span className="text-[9px] text-blue-400">BUILD {buildPct}%</span>
+              <span className="text-[9px] text-yellow-400">SELL {sellPct}%</span>
+              <span className="text-[9px] text-purple-400">HOOK {hookPct}%</span>
+            </div>
+          </div>
+        )}
+
+        {filteredPending.length === 0 && (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 text-center">
+            <p className="text-neutral-600 text-sm">Žádné čekající akce</p>
+          </div>
+        )}
+
+        {filteredPending.slice(0, 30).map(action => {
+          const pCfg = purposeConfig[action.purpose || "build"] || purposeConfig.build;
+          const vaultItem = action.photoId ? vaultMap.get(action.photoId) : null;
+          const hasPhoto = vaultItem && isImgFile(vaultItem.filename);
+          return (
+            <motion.div key={action.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -100 }}
+              data-testid={`pending-action-${action.id}`}
+              className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+              <div className="p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-white">{userNameMap.get(action.userId!) || "?"}</span>
+                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pCfg.cls}`}>{pCfg.icon} {pCfg.label}</span>
+                    {action.timing && <span className="text-[10px] text-neutral-500">⏰ {action.timing}</span>}
+                  </div>
+                  <span className="text-[9px] text-neutral-600">{formatDistanceToNow(new Date(action.createdAt), { locale: cs, addSuffix: true })}</span>
+                </div>
+
+                {action.message && (
+                  <div className="bg-neutral-800/60 rounded-lg px-3 py-2.5">
+                    <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">{action.message}</p>
+                  </div>
+                )}
+
+                {hasPhoto && (
+                  <div className="flex items-start gap-3">
+                    <button onClick={() => setExpandedPhoto(expandedPhoto === action.id ? null : action.id)} className="shrink-0" data-testid={`photo-preview-${action.id}`}>
+                      <img src={`/uploads/${vaultItem!.filename}`} alt="Doporučená fotka"
+                        className={`rounded-lg border border-pink-500/30 object-cover transition-all cursor-pointer hover:brightness-110 ${expandedPhoto === action.id ? "w-48 h-48" : "w-16 h-16"}`} />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-pink-400 font-bold">📸 Doporučená fotka #{action.photoId}</p>
+                      {vaultItem!.description && <p className="text-[10px] text-neutral-400 mt-0.5">{vaultItem!.description}</p>}
+                      {vaultItem!.tags?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {vaultItem!.tags.map((t, i) => <span key={i} className="text-[8px] bg-pink-500/15 text-pink-400 px-1 py-0.5 rounded">{t}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {action.photoId && !hasPhoto && vaultItem && (
+                  <p className="text-[10px] text-pink-400">📎 Doporučený soubor #{action.photoId}: {vaultItem.filename}</p>
+                )}
+                {action.photoId && !vaultItem && (
+                  <p className="text-[10px] text-neutral-500">📸 Fotka #{action.photoId} (není ve vaultu)</p>
+                )}
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button onClick={() => markDone(action.id)} data-testid={`btn-done-${action.id}`}
+                    className="flex items-center gap-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg transition-colors">
+                    ✓ Odesláno
+                  </button>
+                  {action.message && <CopyButton text={action.message} />}
+                  <button onClick={() => dismissAction(action.id)} data-testid={`btn-dismiss-${action.id}`}
+                    className="text-[10px] text-neutral-600 hover:text-red-400 transition-colors ml-auto px-2 py-1">
+                    ✕ Zahodit
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+        {filteredPending.length > 30 && <p className="text-[10px] text-neutral-600 text-center">+ dalších {filteredPending.length - 30} akcí</p>}
+      </div>
+
+      {doneActions.length > 0 && (
+        <div className="space-y-2">
+          <button onClick={() => setShowDone(!showDone)} data-testid="btn-toggle-done"
+            className="flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-widest hover:text-neutral-300 transition-colors">
+            <span>{showDone ? "▼" : "▶"}</span>
+            <span>✅ Provedené ({doneActions.length})</span>
+          </button>
+          <AnimatePresence>
+            {showDone && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-1">
+                {doneActions.slice(0, 20).map(action => (
+                  <div key={action.id} className="bg-neutral-900/50 border border-neutral-800/50 rounded-xl p-2.5 flex items-center gap-2 opacity-60">
+                    <span className="text-[10px] text-emerald-400">✓</span>
+                    <span className="text-xs text-neutral-300 truncate flex-1">{userNameMap.get(action.userId!) || "?"}: {action.message?.substring(0, 80)}</span>
+                    {action.executedAt && <span className="text-[9px] text-neutral-600 shrink-0">{formatDistanceToNow(new Date(action.executedAt), { locale: cs, addSuffix: true })}</span>}
+                  </div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
@@ -1020,70 +1200,18 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
         </div>
       )}
 
-      {pendingActions.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📨 Čekající akce ({filteredPending.length}{actionFilter !== "all" ? `/${pendingActions.length}` : ""})</p>
-            <div className="flex gap-1">
-              {(["all", "build", "sell", "hook"] as const).map(f => (
-                <button key={f} onClick={() => setActionFilter(f)} data-testid={`filter-action-${f}`}
-                  className={`text-[9px] px-2 py-0.5 rounded transition-colors ${actionFilter === f ? "bg-neutral-700 text-white" : "text-neutral-600 hover:text-neutral-400"}`}>
-                  {f === "all" ? "Vše" : purposeConfig[f].icon}
-                </button>
-              ))}
-            </div>
+      {vaultItems.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+          <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest mb-2">📦 Vault — poslední obsah</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {vaultItems.filter(v => isImgFile(v.filename)).slice(0, 8).map(item => (
+              <div key={item.id} className="shrink-0">
+                <img src={`/uploads/${item.filename}`} alt={item.description || item.filename}
+                  className="w-16 h-16 rounded-lg object-cover border border-neutral-700" />
+                <p className="text-[8px] text-neutral-600 text-center mt-0.5">#{item.id}</p>
+              </div>
+            ))}
           </div>
-
-          {pendingActions.length > 0 && (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-2.5">
-              <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden">
-                {buildPct > 0 && <div className="bg-blue-500 h-full rounded-full" style={{ width: `${buildPct}%` }} />}
-                {sellPct > 0 && <div className="bg-yellow-500 h-full rounded-full" style={{ width: `${sellPct}%` }} />}
-                {hookPct > 0 && <div className="bg-purple-500 h-full rounded-full" style={{ width: `${hookPct}%` }} />}
-              </div>
-              <div className="flex justify-between mt-1">
-                <span className="text-[9px] text-blue-400">BUILD {buildPct}%</span>
-                <span className="text-[9px] text-yellow-400">SELL {sellPct}%</span>
-                <span className="text-[9px] text-purple-400">HOOK {hookPct}%</span>
-              </div>
-            </div>
-          )}
-
-          {filteredPending.slice(0, 25).map(action => {
-            const pCfg = purposeConfig[action.purpose || "build"] || purposeConfig.build;
-            return (
-              <div key={action.id} data-testid={`pending-action-${action.id}`}
-                className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-neutral-300">{userNameMap.get(action.userId!) || "?"}</span>
-                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pCfg.cls}`}>{pCfg.icon} {pCfg.label}</span>
-                    {action.timing && <span className="text-[10px] text-neutral-500">⏰ {action.timing}</span>}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[9px] text-neutral-600">{formatDistanceToNow(new Date(action.createdAt), { locale: cs, addSuffix: true })}</span>
-                    {action.message && <CopyButton text={action.message} />}
-                  </div>
-                </div>
-                {action.message && <p className="text-sm text-white leading-relaxed">{action.message}</p>}
-                {action.photoId && <p className="text-[10px] text-pink-400">📸 Fotka #{action.photoId}</p>}
-              </div>
-            );
-          })}
-          {filteredPending.length > 25 && <p className="text-[10px] text-neutral-600 text-center">+ dalších {filteredPending.length - 25} akcí</p>}
-        </div>
-      )}
-
-      {doneActions.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">✅ Provedené akce ({doneActions.length})</p>
-          {doneActions.slice(0, 10).map(action => (
-            <div key={action.id} className="bg-neutral-900/50 border border-neutral-800/50 rounded-xl p-2.5 flex items-center gap-2 opacity-70">
-              <span className="text-[10px] text-emerald-400">✓</span>
-              <span className="text-xs text-neutral-300 truncate flex-1">{userNameMap.get(action.userId!) || "?"}: {action.message?.substring(0, 60)}...</span>
-              {action.executedAt && <span className="text-[9px] text-neutral-600 shrink-0">{formatDistanceToNow(new Date(action.executedAt), { locale: cs, addSuffix: true })}</span>}
-            </div>
-          ))}
         </div>
       )}
     </div>
@@ -1094,6 +1222,7 @@ export default function ManagerDashboard() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast">("overview");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [initialFilter, setInitialFilter] = useState<string | undefined>(undefined);
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -1148,8 +1277,8 @@ export default function ManagerDashboard() {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {activeTab === "overview" && <OverviewTab users={users} />}
-        {activeTab === "customers" && <CustomersTab users={users} qc={qc} selectedGroup={selectedGroup} setSelectedGroup={setSelectedGroup} />}
+        {activeTab === "overview" && <OverviewTab users={users} onNavigate={(tab, filter) => { setActiveTab(tab); setInitialFilter(filter); setSelectedGroup(null); }} />}
+        {activeTab === "customers" && <CustomersTab users={users} qc={qc} selectedGroup={selectedGroup} setSelectedGroup={setSelectedGroup} initialFilter={initialFilter} />}
         {activeTab === "vault" && <VaultTab />}
         {activeTab === "trends" && <TrendsTab />}
         {activeTab === "broadcast" && <BroadcastTab />}
