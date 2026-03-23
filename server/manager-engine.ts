@@ -27,8 +27,14 @@ export function getManagerStatus() {
     isPaused: enginePaused,
     lastFullScan: lastFullScan ? new Date(lastFullScan).toISOString() : null,
     nextScan: lastFullScan ? new Date(lastFullScan + SCAN_INTERVAL).toISOString() : null,
-    recentLogs: logs.slice(-30),
+    recentLogs: logs.slice(-50),
     pendingDelayed: DELAYED_QUEUE.length,
+    autonomousFeatures: {
+      autoCleanup: !enginePaused,
+      selfLearning: !enginePaused,
+      autoMessaging: !enginePaused,
+      duplicateDetection: !enginePaused,
+    },
   };
 }
 
@@ -36,8 +42,10 @@ export function setEnginePaused(paused: boolean) {
   enginePaused = paused;
   log(paused ? "engine_paused" : "engine_resumed", paused ? "Owner pozastavil engine" : "Owner obnovil engine");
   if (!paused) {
-    setTimeout(() => executePendingBacklog(), 2000);
-    setTimeout(() => runFullScan(), 5000);
+    setTimeout(() => autoCleanup(), 1000);
+    setTimeout(() => executePendingBacklog(), 3000);
+    setTimeout(() => selfLearn(), 4000);
+    setTimeout(() => runFullScan(), 6000);
   }
 }
 
@@ -397,12 +405,129 @@ async function executePendingBacklog() {
   }
 }
 
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+async function autoCleanup() {
+  if (enginePaused) return;
+  try {
+    const allUsers = await storage.getAllUsers();
+    const allConvs = await storage.getAllConversations();
+    const allMsgs = await storage.getAllMessages();
+
+    const msgsByConv: Record<number, number> = {};
+    for (const msg of allMsgs) {
+      msgsByConv[msg.conversationId] = (msgsByConv[msg.conversationId] || 0) + 1;
+    }
+
+    const userMsgCounts: Record<number, number> = {};
+    for (const conv of allConvs) {
+      userMsgCounts[conv.userId] = (userMsgCounts[conv.userId] || 0) + (msgsByConv[conv.id] || 0);
+    }
+
+    const TEST_PATTERNS = /^(test|testuser|testpayer|admin|demo)/i;
+
+    const nameGroups = new Map<string, typeof allUsers>();
+    for (const u of allUsers) {
+      const key = normalizeName(u.name);
+      const arr = nameGroups.get(key) || [];
+      arr.push(u);
+      nameGroups.set(key, arr);
+    }
+
+    let deleted = 0;
+    let merged = 0;
+
+    for (const u of allUsers) {
+      if (TEST_PATTERNS.test(u.name) && (userMsgCounts[u.id] || 0) === 0) {
+        await storage.deleteUser(u.id);
+        log("auto_cleanup", `Smazán testovací účet: "${u.name}" #${u.id} (0 zpráv)`);
+        deleted++;
+      }
+    }
+
+    for (const [key, group] of nameGroups) {
+      if (group.length <= 1) continue;
+
+      const emptyDuplicates = group.filter(u => (userMsgCounts[u.id] || 0) === 0 && !TEST_PATTERNS.test(u.name));
+      const withMessages = group.filter(u => (userMsgCounts[u.id] || 0) > 0);
+
+      if (withMessages.length > 0) {
+        for (const empty of emptyDuplicates) {
+          await storage.deleteUser(empty.id);
+          log("auto_cleanup", `Smazán prázdný duplikát: "${empty.name}" #${empty.id} (originál #${withMessages[0].id} má ${userMsgCounts[withMessages[0].id]} zpráv)`);
+          deleted++;
+          merged++;
+        }
+      } else if (emptyDuplicates.length > 1) {
+        for (let i = 1; i < emptyDuplicates.length; i++) {
+          await storage.deleteUser(emptyDuplicates[i].id);
+          log("auto_cleanup", `Smazán nadbytečný duplikát: "${emptyDuplicates[i].name}" #${emptyDuplicates[i].id}`);
+          deleted++;
+        }
+      }
+    }
+
+    if (deleted > 0) {
+      log("cleanup_complete", `Vyčištěno ${deleted} účtů (${merged} duplikátů sloučeno)`);
+    }
+  } catch (err) {
+    log("cleanup_error", (err as Error).message);
+  }
+}
+
+async function selfLearn() {
+  if (enginePaused) return;
+  try {
+    const recentActions = await storage.getManagerActions(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    const doneActions = recentActions.filter(a => a.status === "done" && a.userId);
+
+    let gotResponse = 0;
+    let noResponse = 0;
+
+    for (const action of doneActions.slice(0, 50)) {
+      if (!action.executedAt || !action.userId) continue;
+
+      const convs = await storage.getConversationsByUser(action.userId);
+      if (convs.length === 0) continue;
+
+      const msgs = await storage.getMessagesByConversation(convs[0].id);
+      const actionTime = new Date(action.executedAt).getTime();
+      const userReplied = msgs.some(m =>
+        m.role === "user" && new Date(m.createdAt).getTime() > actionTime
+      );
+
+      if (userReplied) gotResponse++;
+      else noResponse++;
+    }
+
+    const total = gotResponse + noResponse;
+    if (total > 0) {
+      const responseRate = Math.round((gotResponse / total) * 100);
+      log("self_learn", `Response rate: ${responseRate}% (${gotResponse}/${total} zpráv dostalo odpověď za 24h)`);
+
+      if (responseRate < 20 && total >= 5) {
+        log("self_learn_warning", `Nízký response rate (${responseRate}%) — engine upraví strategii při příštím scanu`);
+      }
+    }
+  } catch (err) {
+    log("self_learn_error", (err as Error).message);
+  }
+}
+
 export function startManagerEngine() {
   log("engine_start", "AI Manager Engine spuštěn — POZASTAVENÝ (čeká na spuštění ownerem)");
   setInterval(() => {
     if (!enginePaused) runFullScan();
   }, SCAN_INTERVAL);
   setInterval(() => processDelayedQueue(), 30 * 1000);
+  setInterval(() => {
+    if (!enginePaused) autoCleanup();
+  }, 60 * 60 * 1000);
+  setInterval(() => {
+    if (!enginePaused) selfLearn();
+  }, 30 * 60 * 1000);
 }
 
 export async function triggerAnalysis(userId: number, userName: string) {

@@ -314,6 +314,8 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup, initialFilte
   const [batchRunning, setBatchRunning] = useState(false);
   const [filter, setFilter] = useState<"all" | "hot" | "warm" | "cold" | "new">((initialFilter as any) || "all");
   const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const analyzeMut = useMutation({
     mutationFn: async (userId: number) => {
@@ -329,6 +331,23 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup, initialFilte
     setBatchRunning(true);
     await fetch("/api/manager/analyze-all", { method: "POST" });
     setTimeout(() => { qc.invalidateQueries({ queryKey: ["/api/manager/overview"] }); setBatchRunning(false); }, 15000);
+  };
+
+  const deleteUser = async (userId: number) => {
+    setDeletingId(userId);
+    await fetch(`/api/manager/users/${userId}`, { method: "DELETE" });
+    qc.invalidateQueries({ queryKey: ["/api/manager/overview"] });
+    setDeletingId(null);
+    setConfirmDelete(null);
+  };
+
+  const deleteGroup = async (group: UserGroup) => {
+    for (const s of group.sessions) {
+      await fetch(`/api/manager/users/${s.id}`, { method: "DELETE" });
+    }
+    qc.invalidateQueries({ queryKey: ["/api/manager/overview"] });
+    setSelectedGroup(null);
+    setConfirmDelete(null);
   };
 
   const groups = groupUsers(users);
@@ -417,10 +436,24 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup, initialFilte
                 <p className="font-bold text-sm">{activeGroup.name}</p>
                 {activeGroup.sessions.length > 1 && <span className="text-[10px] text-neutral-500 bg-neutral-800 px-1.5 py-0.5 rounded">{activeGroup.sessions.length} sessions</span>}
               </div>
-              <button onClick={() => primaryUser && analyzeMut.mutate(primaryUser.id)} disabled={analyzingId === primaryUser?.id} data-testid="button-analyze-user"
-                className="text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-bold">
-                {analyzingId === primaryUser?.id ? "⏳..." : "🧠 Analyzovat"}
-              </button>
+              <div className="flex items-center gap-2">
+                {confirmDelete === activeGroup.name ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-red-400">Smazat?</span>
+                    <button onClick={() => deleteGroup(activeGroup)} data-testid="button-confirm-delete-user"
+                      className="text-[10px] bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded-lg font-bold">Ano</button>
+                    <button onClick={() => setConfirmDelete(null)} data-testid="button-cancel-delete-user"
+                      className="text-[10px] bg-neutral-700 hover:bg-neutral-600 text-white px-2 py-1 rounded-lg">Ne</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmDelete(activeGroup.name)} data-testid="button-delete-user"
+                    className="text-xs text-neutral-600 hover:text-red-400 transition-colors" title="Smazat zákazníka">🗑️</button>
+                )}
+                <button onClick={() => primaryUser && analyzeMut.mutate(primaryUser.id)} disabled={analyzingId === primaryUser?.id} data-testid="button-analyze-user"
+                  className="text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-bold">
+                  {analyzingId === primaryUser?.id ? "⏳..." : "🧠 Analyzovat"}
+                </button>
+              </div>
             </div>
 
             {!activeGroup.bestProfile ? (
@@ -1246,6 +1279,44 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
   );
 }
 
+function AccordionCard({ title, icon, color, children, defaultOpen = false }: { title: string; icon: string; color: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const colorMap: Record<string, string> = {
+    emerald: "border-emerald-500/30 bg-emerald-500/5",
+    blue: "border-blue-500/30 bg-blue-500/5",
+    amber: "border-amber-500/30 bg-amber-500/5",
+    purple: "border-purple-500/30 bg-purple-500/5",
+    pink: "border-pink-500/30 bg-pink-500/5",
+    red: "border-red-500/30 bg-red-500/5",
+    neutral: "border-neutral-800 bg-neutral-900",
+  };
+  const textMap: Record<string, string> = {
+    emerald: "text-emerald-400", blue: "text-blue-400", amber: "text-amber-400",
+    purple: "text-purple-400", pink: "text-pink-400", red: "text-red-400", neutral: "text-neutral-400",
+  };
+  return (
+    <div className={`rounded-xl border overflow-hidden transition-all ${colorMap[color] || colorMap.neutral}`}>
+      <button onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
+        data-testid={`accordion-${title.replace(/\s+/g, "-").toLowerCase()}`}>
+        <div className="flex items-center gap-2">
+          <span className="text-base">{icon}</span>
+          <span className={`text-sm font-bold ${textMap[color] || "text-white"}`}>{title}</span>
+        </div>
+        <span className={`text-xs transition-transform ${open ? "rotate-180" : ""} ${textMap[color] || "text-neutral-500"}`}>▼</span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }} className="overflow-hidden">
+            <div className="px-4 pb-4">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function PaymentsTab({ users }: { users: ManagerUser[] }) {
   const [pricingStrategy, setPricingStrategy] = useState<any>(null);
   const [pricingLoading, setPricingLoading] = useState(false);
@@ -1276,7 +1347,7 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex-1 overflow-y-auto p-4 space-y-3">
       <div className={`p-4 rounded-xl border ${connected ? "bg-emerald-900/20 border-emerald-700/40" : "bg-amber-900/20 border-amber-700/40"}`}>
         <div className="flex items-center gap-3">
           <div className={`w-3 h-3 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
@@ -1316,18 +1387,16 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
       )}
 
       {pricingStrategy && !pricingLoading && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
           {pricingStrategy.summary && (
             <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4">
-              <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-2">Shrnutí strategie</p>
               <p className="text-sm text-emerald-300 leading-relaxed">{pricingStrategy.summary}</p>
             </div>
           )}
 
           {pricingStrategy.marketAnalysis && (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">📊 Analýza trhu</p>
-              <div className="grid grid-cols-2 gap-3">
+            <AccordionCard title="Analýza trhu" icon="📊" color="blue" defaultOpen={true}>
+              <div className="grid grid-cols-2 gap-3 mb-3">
                 <div className="bg-neutral-800/60 rounded-lg p-3">
                   <p className="text-[10px] text-neutral-500 uppercase">Průměr konkurence</p>
                   <p className="text-sm font-bold text-white">{pricingStrategy.marketAnalysis.averageCompetitorPrice}</p>
@@ -1337,7 +1406,7 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
                   <p className="text-sm font-bold text-white">{pricingStrategy.marketAnalysis.priceRange}</p>
                 </div>
               </div>
-              <div className="mt-3 bg-neutral-800/60 rounded-lg p-3">
+              <div className="bg-neutral-800/60 rounded-lg p-3">
                 <p className="text-[10px] text-neutral-500 uppercase mb-1">Pozice na trhu</p>
                 <p className="text-sm text-neutral-300">{pricingStrategy.marketAnalysis.marketPosition}</p>
               </div>
@@ -1348,13 +1417,11 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
                   ))}
                 </div>
               )}
-            </div>
+            </AccordionCard>
           )}
 
           {pricingStrategy.recommendedPricing && (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">💵 Doporučené ceny</p>
-              
+            <AccordionCard title="Doporučené ceny" icon="💵" color="amber" defaultOpen={true}>
               {pricingStrategy.recommendedPricing.subscription && (
                 <div className="mb-3">
                   <p className="text-xs font-bold text-amber-400 mb-2">Předplatné</p>
@@ -1416,12 +1483,11 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
                   ))}
                 </div>
               )}
-            </div>
+            </AccordionCard>
           )}
 
           {pricingStrategy.revenueProjection && (
-            <div className="bg-gradient-to-r from-emerald-900/20 to-green-900/20 border border-emerald-700/30 rounded-xl p-4">
-              <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-3">📈 Projekce výdělku</p>
+            <AccordionCard title="Projekce výdělku" icon="📈" color="emerald" defaultOpen={true}>
               <div className="grid grid-cols-3 gap-3 mb-3">
                 <div className="bg-neutral-800/60 rounded-lg p-3 text-center">
                   <p className="text-[10px] text-neutral-500 uppercase">Aktuální</p>
@@ -1439,12 +1505,11 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
               {pricingStrategy.revenueProjection.keyDrivers?.map((d: string, i: number) => (
                 <p key={i} className="text-xs text-emerald-400/80 mb-0.5">→ {d}</p>
               ))}
-            </div>
+            </AccordionCard>
           )}
 
           {pricingStrategy.promoStrategy && pricingStrategy.promoStrategy.length > 0 && (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">🎯 Promo strategie</p>
+            <AccordionCard title="Promo strategie" icon="🎯" color="purple">
               <div className="space-y-2">
                 {pricingStrategy.promoStrategy.map((promo: any, i: number) => (
                   <div key={i} className="bg-neutral-800/60 rounded-lg px-3 py-2">
@@ -1461,12 +1526,11 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
                   </div>
                 ))}
               </div>
-            </div>
+            </AccordionCard>
           )}
 
           {pricingStrategy.upsellFunnel && pricingStrategy.upsellFunnel.length > 0 && (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">🔄 Upsell funnel</p>
+            <AccordionCard title="Upsell funnel" icon="🔄" color="amber">
               <div className="space-y-2">
                 {pricingStrategy.upsellFunnel.map((step: any, i: number) => (
                   <div key={i} className="flex items-start gap-3 bg-neutral-800/60 rounded-lg px-3 py-2">
@@ -1478,12 +1542,11 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
                   </div>
                 ))}
               </div>
-            </div>
+            </AccordionCard>
           )}
 
           {pricingStrategy.actionPlan && pricingStrategy.actionPlan.length > 0 && (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-              <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">Akční plán</p>
+            <AccordionCard title="Akční plán" icon="📋" color="red" defaultOpen={true}>
               <div className="space-y-2">
                 {pricingStrategy.actionPlan.map((action: any, i: number) => (
                   <div key={i} className="flex items-start gap-2 bg-neutral-800/60 rounded-lg px-3 py-2">
@@ -1495,7 +1558,7 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
                   </div>
                 ))}
               </div>
-            </div>
+            </AccordionCard>
           )}
 
           {pricingStrategy.warnings && pricingStrategy.warnings.length > 0 && (
@@ -1508,17 +1571,14 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
       )}
 
       {connected && products.length > 0 && (
-        <div>
-          <h3 className="text-sm font-bold text-neutral-300 mb-3">Aktivní produkty</h3>
+        <AccordionCard title={`Aktivní produkty (${products.length})`} icon="📦" color="neutral">
           <div className="space-y-2">
             {products.map((product: any) => (
-              <div key={product.id} className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800" data-testid={`payment-product-${product.id}`}>
+              <div key={product.id} className="p-3 rounded-lg bg-neutral-800/60" data-testid={`payment-product-${product.id}`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-bold text-sm">{product.name}</span>
-                    {product.description && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{product.description}</p>
-                    )}
+                    {product.description && <p className="text-xs text-neutral-500 mt-0.5">{product.description}</p>}
                   </div>
                   <div className="text-right space-y-1">
                     {product.prices.map((price: any) => {
@@ -1537,21 +1597,20 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
               </div>
             ))}
           </div>
-        </div>
+        </AccordionCard>
       )}
 
       {connected && usersWithStripe.length > 0 && (
-        <div>
-          <h3 className="text-sm font-bold text-neutral-300 mb-3">Zákazníci s platbou</h3>
+        <AccordionCard title={`Zákazníci s platbou (${usersWithStripe.length})`} icon="👥" color="neutral">
           <div className="space-y-2">
             {usersWithStripe.map(user => (
-              <div key={user.id} className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 flex items-center justify-between" data-testid={`payment-user-${user.id}`}>
+              <div key={user.id} className="p-3 rounded-lg bg-neutral-800/60 flex items-center justify-between" data-testid={`payment-user-${user.id}`}>
                 <span className="text-sm font-medium">{user.name}</span>
                 <span className="text-xs text-neutral-500 font-mono">{user.stripeCustomerId}</span>
               </div>
             ))}
           </div>
-        </div>
+        </AccordionCard>
       )}
 
       {!connected && !pricingStrategy && !pricingLoading && (

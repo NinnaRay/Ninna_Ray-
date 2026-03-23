@@ -31,6 +31,7 @@ export interface IStorage {
   addManagerLog(event: string, detail?: string): Promise<void>;
   getManagerLogs(limit?: number): Promise<ManagerLog[]>;
   updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<void>;
+  deleteUser(userId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -175,6 +176,16 @@ export class DatabaseStorage implements IStorage {
     await db.update(users)
       .set({ stripeCustomerId })
       .where(eq(users.id, userId));
+  }
+
+  async deleteUser(userId: number): Promise<void> {
+    const userConvs = await db.select().from(conversations).where(eq(conversations.userId, userId));
+    for (const conv of userConvs) {
+      await db.delete(messages).where(eq(messages.conversationId, conv.id));
+    }
+    await db.delete(conversations).where(eq(conversations.userId, userId));
+    await db.delete(managerActions).where(eq(managerActions.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
   }
 }
 

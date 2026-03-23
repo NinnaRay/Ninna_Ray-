@@ -836,6 +836,17 @@ Vrať POUZE čistý JSON (bez markdown):
     }
   });
 
+  app.delete("/api/manager/users/:userId", requireOwner, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      await storage.deleteUser(userId);
+      await storage.addManagerLog("user_deleted", `Smazán uživatel #${userId}`);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // Analyze ALL users at once (batch)
   app.post("/api/manager/analyze-all", requireOwner, async (_req, res) => {
     try {
