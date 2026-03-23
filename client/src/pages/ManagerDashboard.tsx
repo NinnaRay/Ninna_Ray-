@@ -336,9 +336,10 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: M
                       <span className="text-[10px] text-neutral-500">{group.totalMessages} zpráv</span>
                       {p && <span className="text-[10px] text-neutral-600">· {p.engagementScore}%</span>}
                       {stratLabel && <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${p?.strategy === "sell" ? "bg-yellow-500/20 text-yellow-400" : p?.strategy === "hook" ? "bg-purple-500/20 text-purple-400" : "bg-blue-500/20 text-blue-400"}`}>{stratLabel}</span>}
+                      {p?.relationshipStage && <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${p.relationshipStage === "monetizace" ? "bg-yellow-500/15 text-yellow-400" : p.relationshipStage === "stabilní" ? "bg-emerald-500/15 text-emerald-400" : "bg-neutral-700 text-neutral-400"}`}>{p.relationshipStage}</span>}
                     </div>
-                    {p?.relationshipStage && <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${p.relationshipStage === "monetizace" ? "bg-yellow-500/15 text-yellow-400" : p.relationshipStage === "stabilní" ? "bg-emerald-500/15 text-emerald-400" : "bg-neutral-700 text-neutral-400"}`}>{p.relationshipStage}</span>}
                     {p?.mainDriver && <p className="text-[10px] text-neutral-400 truncate mt-0.5">{p.mainDriver}</p>}
+                    {group.sessions[0]?.lastActivity && <p className="text-[9px] text-neutral-600 mt-0.5">🕐 {formatDistanceToNow(new Date(group.sessions[0].lastActivity), { locale: cs, addSuffix: true })}</p>}
                   </div>
                 </div>
               </button>
@@ -390,6 +391,7 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup }: { users: M
                       <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
                       <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${stratCfg.cls}`}>{stratCfg.icon} {stratCfg.label}</span>
                       <span className="text-xs text-neutral-500">{p.engagementScore}% eng · {p.buyingPotential}</span>
+                      {p.lastAnalyzed && <span className="text-[9px] text-neutral-600 ml-auto">🕐 {formatDistanceToNow(new Date(p.lastAnalyzed), { locale: cs, addSuffix: true })}</span>}
                     </div>
                     <ScoreBar score={p.engagementScore} />
 
@@ -856,16 +858,33 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
     queryFn: () => fetch("/api/manager/actions").then(r => r.json()),
   });
 
+  const [actionFilter, setActionFilter] = useState<"all" | "build" | "sell" | "hook">("all");
+  const [showLogs, setShowLogs] = useState(false);
+
   const groups = groupUsers(users);
   const totalMessages = users.reduce((s, u) => s + u.totalMessages, 0);
   const analyzed = users.filter(u => u.aiProfile).length;
+  const withProfiles = users.filter(u => u.aiProfile);
   const hotCount = groups.filter(g => g.bestStatus === "hot").length;
   const warmCount = groups.filter(g => g.bestStatus === "warm").length;
   const coldCount = groups.filter(g => g.bestStatus === "cold").length;
-  const avgEngagement = users.filter(u => u.aiProfile).reduce((s, u) => s + ((u.aiProfile as any)?.engagementScore || 0), 0) / (analyzed || 1);
+  const newCount = groups.filter(g => g.bestStatus === "new").length;
+  const avgEngagement = withProfiles.reduce((s, u) => s + ((u.aiProfile as any)?.engagementScore || 0), 0) / (analyzed || 1);
+
+  const stratCounts = { build: 0, sell: 0, hook: 0 };
+  const stageCounts: Record<string, number> = {};
+  const buyPotCounts: Record<string, number> = {};
+  withProfiles.forEach(u => {
+    const p = u.aiProfile as any;
+    if (p?.strategy && stratCounts[p.strategy as keyof typeof stratCounts] !== undefined) stratCounts[p.strategy as keyof typeof stratCounts]++;
+    if (p?.relationshipStage) stageCounts[p.relationshipStage] = (stageCounts[p.relationshipStage] || 0) + 1;
+    if (p?.buyingPotential) buyPotCounts[p.buyingPotential] = (buyPotCounts[p.buyingPotential] || 0) + 1;
+  });
 
   const pendingActions = actions.filter(a => a.status === "pending");
   const doneActions = actions.filter(a => a.status === "done");
+
+  const filteredPending = actionFilter === "all" ? pendingActions : pendingActions.filter(a => a.purpose === actionFilter);
 
   const purposeConfig: Record<string, { icon: string; label: string; cls: string }> = {
     build: { icon: "🤝", label: "BUILD", cls: "bg-blue-500/20 border-blue-500/30 text-blue-400" },
@@ -874,6 +893,10 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
   };
 
   const userNameMap = new Map(users.map(u => [u.id, u.name]));
+
+  const buildPct = pendingActions.length ? Math.round(pendingActions.filter(a => a.purpose === "build").length / pendingActions.length * 100) : 0;
+  const sellPct = pendingActions.length ? Math.round(pendingActions.filter(a => a.purpose === "sell").length / pendingActions.length * 100) : 0;
+  const hookPct = pendingActions.length ? Math.round(pendingActions.filter(a => a.purpose === "hook").length / pendingActions.length * 100) : 0;
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -888,42 +911,145 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
             {engineStatus?.nextScan && ` · Další: ${formatDistanceToNow(new Date(engineStatus.nextScan), { locale: cs, addSuffix: true })}`}
           </p>
         </div>
+        <button onClick={() => setShowLogs(!showLogs)} data-testid="button-toggle-logs"
+          className="text-[10px] text-neutral-500 hover:text-neutral-300 transition-colors px-2 py-1 rounded bg-neutral-800/50">
+          {showLogs ? "Skrýt log" : "📋 Log"}
+        </button>
       </div>
+
+      <AnimatePresence>
+        {showLogs && engineStatus?.recentLogs && engineStatus.recentLogs.length > 0 && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 max-h-48 overflow-y-auto space-y-1">
+              {engineStatus.recentLogs.slice(-20).reverse().map((log, i) => (
+                <div key={i} className="flex items-start gap-2 text-[10px]">
+                  <span className="text-neutral-600 shrink-0">{new Date(log.time).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                  <span className={`shrink-0 ${log.event.includes("error") ? "text-red-400" : log.event.includes("complete") ? "text-emerald-400" : "text-neutral-400"}`}>{log.event}</span>
+                  {log.detail && <span className="text-neutral-500 truncate">{log.detail}</span>}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {[
-          { label: "Zákazníci", value: groups.length, icon: "👥" },
-          { label: "Analyzováno", value: `${analyzed}/${users.length}`, icon: "🧠" },
-          { label: "Ø Engagement", value: `${Math.round(avgEngagement)}%`, icon: "📊" },
-          { label: "Zpráv celkem", value: totalMessages, icon: "💬" },
+          { label: "Zákazníci", value: groups.length, icon: "👥", sub: `${analyzed} analýz` },
+          { label: "Ø Engagement", value: `${Math.round(avgEngagement)}%`, icon: "📊", sub: avgEngagement >= 60 ? "silný" : avgEngagement >= 35 ? "střední" : "nízký" },
+          { label: "Čekající akce", value: pendingActions.length, icon: "📨", sub: `${doneActions.length} provedeno` },
+          { label: "Zpráv celkem", value: totalMessages, icon: "💬", sub: `${users.length} sessions` },
         ].map((stat, i) => (
           <div key={i} className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid={`stat-card-${i}`}>
             <p className="text-lg">{stat.icon}</p>
             <p className="text-lg font-bold text-white">{stat.value}</p>
             <p className="text-[10px] text-neutral-500">{stat.label}</p>
+            <p className="text-[9px] text-neutral-600">{stat.sub}</p>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-center">
-          <p className="text-xl font-bold text-red-400">{hotCount}</p>
-          <p className="text-[10px] text-red-300">🔥 Horký</p>
+      <div className="grid grid-cols-4 gap-2">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-2.5 text-center">
+          <p className="text-lg font-bold text-red-400">{hotCount}</p>
+          <p className="text-[9px] text-red-300">🔥 Horký</p>
         </div>
-        <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-3 text-center">
-          <p className="text-xl font-bold text-orange-400">{warmCount}</p>
-          <p className="text-[10px] text-orange-300">⚡ Teplý</p>
+        <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-2.5 text-center">
+          <p className="text-lg font-bold text-orange-400">{warmCount}</p>
+          <p className="text-[9px] text-orange-300">⚡ Teplý</p>
         </div>
-        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-center">
-          <p className="text-xl font-bold text-blue-400">{coldCount}</p>
-          <p className="text-[10px] text-blue-300">❄️ Studený</p>
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-2.5 text-center">
+          <p className="text-lg font-bold text-blue-400">{coldCount}</p>
+          <p className="text-[9px] text-blue-300">❄️ Studený</p>
+        </div>
+        <div className="bg-neutral-700/30 border border-neutral-600 rounded-xl p-2.5 text-center">
+          <p className="text-lg font-bold text-neutral-400">{newCount}</p>
+          <p className="text-[9px] text-neutral-400">🌱 Nový</p>
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+          <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest mb-2">Strategie</p>
+          <div className="space-y-1.5">
+            {([["build", "🤝 BUILD", "text-blue-400", "bg-blue-500"], ["sell", "💰 SELL", "text-yellow-400", "bg-yellow-500"], ["hook", "🎣 HOOK", "text-purple-400", "bg-purple-500"]] as const).map(([key, label, textCls, bgCls]) => (
+              <div key={key} className="flex items-center gap-2">
+                <span className={`text-[10px] w-16 ${textCls}`}>{label}</span>
+                <div className="flex-1 bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+                  <div className={`h-full rounded-full ${bgCls}`} style={{ width: `${analyzed ? (stratCounts[key] / analyzed * 100) : 0}%` }} />
+                </div>
+                <span className="text-[10px] text-neutral-500 w-6 text-right">{stratCounts[key]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+          <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest mb-2">Kupní potenciál</p>
+          <div className="space-y-1.5">
+            {(["vysoký", "střední", "nízký"] as const).map(level => {
+              const count = buyPotCounts[level] || 0;
+              const color = level === "vysoký" ? "bg-emerald-500" : level === "střední" ? "bg-amber-500" : "bg-neutral-600";
+              return (
+                <div key={level} className="flex items-center gap-2">
+                  <span className="text-[10px] text-neutral-400 w-14">{level}</span>
+                  <div className="flex-1 bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+                    <div className={`h-full rounded-full ${color}`} style={{ width: `${analyzed ? (count / analyzed * 100) : 0}%` }} />
+                  </div>
+                  <span className="text-[10px] text-neutral-500 w-6 text-right">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {Object.keys(stageCounts).length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+          <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest mb-2">Fáze vztahu</p>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(stageCounts).sort((a, b) => b[1] - a[1]).map(([stage, count]) => {
+              const stageIcons: Record<string, string> = { "nový": "🌱", "budování": "🤝", "stabilní": "💎", "monetizace": "💰", "reaktivace": "🎣" };
+              return (
+                <div key={stage} className="bg-neutral-800 rounded-lg px-2.5 py-1.5 text-center">
+                  <p className="text-xs font-bold text-white">{count}</p>
+                  <p className="text-[9px] text-neutral-400">{stageIcons[stage] || "📍"} {stage}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {pendingActions.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📨 Čekající akce ({pendingActions.length})</p>
-          {pendingActions.slice(0, 20).map(action => {
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📨 Čekající akce ({filteredPending.length}{actionFilter !== "all" ? `/${pendingActions.length}` : ""})</p>
+            <div className="flex gap-1">
+              {(["all", "build", "sell", "hook"] as const).map(f => (
+                <button key={f} onClick={() => setActionFilter(f)} data-testid={`filter-action-${f}`}
+                  className={`text-[9px] px-2 py-0.5 rounded transition-colors ${actionFilter === f ? "bg-neutral-700 text-white" : "text-neutral-600 hover:text-neutral-400"}`}>
+                  {f === "all" ? "Vše" : purposeConfig[f].icon}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {pendingActions.length > 0 && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-2.5">
+              <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden">
+                {buildPct > 0 && <div className="bg-blue-500 h-full rounded-full" style={{ width: `${buildPct}%` }} />}
+                {sellPct > 0 && <div className="bg-yellow-500 h-full rounded-full" style={{ width: `${sellPct}%` }} />}
+                {hookPct > 0 && <div className="bg-purple-500 h-full rounded-full" style={{ width: `${hookPct}%` }} />}
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-[9px] text-blue-400">BUILD {buildPct}%</span>
+                <span className="text-[9px] text-yellow-400">SELL {sellPct}%</span>
+                <span className="text-[9px] text-purple-400">HOOK {hookPct}%</span>
+              </div>
+            </div>
+          )}
+
+          {filteredPending.slice(0, 25).map(action => {
             const pCfg = purposeConfig[action.purpose || "build"] || purposeConfig.build;
             return (
               <div key={action.id} data-testid={`pending-action-${action.id}`}
@@ -935,6 +1061,7 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
                     {action.timing && <span className="text-[10px] text-neutral-500">⏰ {action.timing}</span>}
                   </div>
                   <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-neutral-600">{formatDistanceToNow(new Date(action.createdAt), { locale: cs, addSuffix: true })}</span>
                     {action.message && <CopyButton text={action.message} />}
                   </div>
                 </div>
@@ -943,6 +1070,7 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
               </div>
             );
           })}
+          {filteredPending.length > 25 && <p className="text-[10px] text-neutral-600 text-center">+ dalších {filteredPending.length - 25} akcí</p>}
         </div>
       )}
 
@@ -953,24 +1081,9 @@ function OverviewTab({ users }: { users: ManagerUser[] }) {
             <div key={action.id} className="bg-neutral-900/50 border border-neutral-800/50 rounded-xl p-2.5 flex items-center gap-2 opacity-70">
               <span className="text-[10px] text-emerald-400">✓</span>
               <span className="text-xs text-neutral-300 truncate flex-1">{userNameMap.get(action.userId!) || "?"}: {action.message?.substring(0, 60)}...</span>
-              {action.executedAt && <span className="text-[9px] text-neutral-600">{formatDistanceToNow(new Date(action.executedAt), { locale: cs, addSuffix: true })}</span>}
+              {action.executedAt && <span className="text-[9px] text-neutral-600 shrink-0">{formatDistanceToNow(new Date(action.executedAt), { locale: cs, addSuffix: true })}</span>}
             </div>
           ))}
-        </div>
-      )}
-
-      {engineStatus?.recentLogs && engineStatus.recentLogs.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">📋 Log AI Manageru</p>
-          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 max-h-48 overflow-y-auto space-y-1">
-            {engineStatus.recentLogs.slice(-15).reverse().map((log, i) => (
-              <div key={i} className="flex items-start gap-2 text-[10px]">
-                <span className="text-neutral-600 shrink-0">{new Date(log.time).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span>
-                <span className="text-neutral-400">{log.event}</span>
-                {log.detail && <span className="text-neutral-500 truncate">{log.detail}</span>}
-              </div>
-            ))}
-          </div>
         </div>
       )}
     </div>
