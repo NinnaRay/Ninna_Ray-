@@ -37,16 +37,22 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - **Tables**: `users` (with `aiProfile` jsonb, `aiProfileUpdatedAt`), `conversations` (with `manualMode`, `assignedAgent`), `messages`, `content_items` (vault), `manager_actions` (action queue), `manager_log` (engine activity log)
 - **Migrations**: `npx drizzle-kit push`
 
-### AI Manager System — Fully Autonomous Engine
+### AI Manager System — Fully Autonomous Self-Managing Engine
 - **Fully autonomous** — runs on 10-minute interval, analyzes ALL users, generates actions AND EXECUTES THEM automatically
+- **Self-managing**: Engine cleans up after itself — detects test accounts, duplicate users, and removes them automatically
+- **Self-learning**: Tracks response rates (which messages got replies), adjusts strategy when response rate drops
+- **Auto-cleanup**: Runs on resume + every 60 min — deletes test accounts (TestUser, TestPayer, etc.) and empty duplicates
+  - Groups by `normalizeName()` — if "Žerik" has 5 duplicates with 0 messages, deletes them, keeps the one with messages
 - **Auto-execution**: Engine sends messages directly to customer conversations — no manual intervention needed
   - `timing: "teď"` → sent immediately after analysis
   - `timing: "za 1h"` / `"za 3h"` → queued in delayed queue, processed every 30s
   - `timing: "dnes večer"` → 4h delay; `"zítra"` → 12h delay
 - **Pause/Resume**: Owner can pause engine via `POST /api/manager/engine-pause` — stops all auto-sending
+- **On resume sequence**: autoCleanup(1s) → backlog(3s) → selfLearn(4s) → fullScan(6s)
 - **Backlog sweep**: On engine start, processes all pending actions from previous runs
 - **Engine file**: `server/manager-engine.ts` — starts on server boot, runs `runFullScan()` every 10 min
 - **Auto-reanalyze**: After each chat message, triggers re-analysis if profile > 5 min old
+- **Delete user API**: `DELETE /api/manager/users/:userId` — cascade deletes conversations, messages, actions
 - **Adaptive personalization** — builds persistent individual profiles per customer:
   - `communicationPatterns`: msg length, response speed, emoji usage, tone, peak hours
   - `emotionalTriggers`: what makes them respond, buy, or disengage
