@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   chatCode: text("chat_code").unique(),
   isPremium: boolean("is_premium").default(false),
   messageCount: integer("message_count").default(0).notNull(),
+  stripeCustomerId: text("stripe_customer_id"),
   aiProfile: jsonb("ai_profile"),
   aiProfileUpdatedAt: timestamp("ai_profile_updated_at"),
   createdAt: timestamp("created_at").defaultNow(),

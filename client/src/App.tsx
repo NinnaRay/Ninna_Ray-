@@ -8,6 +8,9 @@ import Chat from "@/pages/Chat";
 import AgentDashboard from "@/pages/AgentDashboard";
 import AdminDashboard from "@/pages/AdminDashboard";
 import ManagerDashboard from "@/pages/ManagerDashboard";
+import Payment from "@/pages/Payment";
+import PaymentSuccess from "@/pages/PaymentSuccess";
+import PaymentCancel from "@/pages/PaymentCancel";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -18,6 +21,9 @@ function Router() {
       <Route path="/agent" component={AgentDashboard} />
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/manager" component={ManagerDashboard} />
+      <Route path="/payment" component={Payment} />
+      <Route path="/payment/success" component={PaymentSuccess} />
+      <Route path="/payment/cancel" component={PaymentCancel} />
       <Route component={NotFound} />
     </Switch>
   );
