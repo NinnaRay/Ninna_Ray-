@@ -1073,4 +1073,6 @@ Vrať POUZE čistý JSON (bez markdown):
       res.status(500).send("Stripe error");
     }
   });
-return httpServer;
+
+  return httpServer;
+}
