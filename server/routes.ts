@@ -104,60 +104,111 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ─── Customer (public) routes ────────────────────────────────────────────────
-
   app.post(api.users.create.path, async (req, res) => {
     const result = api.users.create.input.safeParse(req.body);
-    if (!result.success) return res.status(400).json({ message: result.error.errors[0]?.message || "Invalid input" });
+
+    if (!result.success) {
+      return res.status(400).json({
+        message: result.error.issues[0]?.message || "Invalid input"
+      });
+    }
+
     const user = await storage.createUser(result.data);
     res.status(201).json(user);
   });
 
   app.post("/api/users/login", async (req, res) => {
     const { chatCode } = req.body;
-    if (!chatCode?.trim()) return res.status(400).json({ message: "Kód je povinný" });
+
+    if (!chatCode || !chatCode.trim()) {
+      return res.status(400).json({ message: "Kód je povinný" });
+    }
+
     const user = await storage.getUserByChatCode(chatCode.trim());
-    if (!user) return res.status(404).json({ message: "Neplatný kód" });
+
+    if (!user) {
+      return res.status(404).json({ message: "Neplatný kód" });
+    }
+
     res.json(user);
   });
 
   app.get(api.users.get.path, async (req, res) => {
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
+    const id = parseInt(req.params.id as string);
+
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
     const user = await storage.getUser(id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     res.json(user);
   });
 
   app.get("/api/conversations", async (req, res) => {
-    const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
-    if (!userId) return res.status(400).json({ message: "userId is required" });
+    const userId = req.query.userId
+      ? parseInt(req.query.userId as string)
+      : undefined;
+
+    if (!userId) {
+      return res.status(400).json({ message: "userId is required" });
+    }
+
     const conversations = await storage.getConversationsByUser(userId);
     res.json(conversations);
   });
 
   app.post("/api/conversations", async (req, res) => {
     const { userId, title } = req.body;
-    if (!userId) return res.status(400).json({ message: "userId is required" });
-    const conversation = await storage.createConversation(userId, title || "New Chat");
+
+    if (!userId) {
+      return res.status(400).json({ message: "userId is required" });
+    }
+
+    const conversation = await storage.createConversation(
+      Number(userId),
+      title || "New Chat"
+    );
+
     res.status(201).json(conversation);
   });
 
   app.get("/api/conversations/:id", async (req, res) => {
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid conversation ID" });
+    const id = parseInt(req.params.id as string);
+
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "Invalid conversation ID" });
+    }
+
     const conversation = await storage.getConversation(id);
-    if (!conversation) return res.status(404).json({ message: "Not found" });
+
+    if (!conversation) {
+      return res.status(404).json({ message: "Not found" });
+    }
+
     const messages = await storage.getMessagesByConversation(id);
-    res.json({ ...conversation, messages });
+
+    res.json({
+      ...conversation,
+      messages
+    });
   });
 
   // ─── Chat SSE endpoint (respects manual mode) ─────────────────────────────
 
   app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
     try {
-      const conversationId = parseInt(req.params.id);
-      if (isNaN(conversationId)) return res.status(400).json({ message: "Invalid conversation ID" });
+      const conversationId = parseInt(req.params.id as string);
 
+      if (isNaN(conversationId)) {
+        return res.status(400).json({ message: "Invalid conversation ID" });
+      }
+
+      // tady pokračuje zbytek tvý logiky…
       const { content } = req.body;
       const conversation = await storage.getConversation(conversationId);
       if (!conversation) return res.status(404).json({ message: "Conversation not found" });
@@ -995,3 +1046,21 @@ Vrať POUZE čistý JSON (bez markdown):
 
   return httpServer;
 }
+app.get("/pay", async (req, res) => {
+  try {
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    const session = await stripeService.createCheckoutSession(
+      "test_customer", // klidně natvrdo
+      "price_13,99$",    // ← SEM dej svůj reálnej priceId
+      `${baseUrl}/payment/success`,
+      `${baseUrl}/payment/cancel`,
+      "payment"
+    );
+
+    res.redirect(session.url);
+  } catch (err: any) {
+    console.error("PAY ERROR:", err.message);
+    res.status(500).send("Stripe error");
+  }
+});
