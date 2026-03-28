@@ -948,9 +948,9 @@ Vrať POUZE čistý JSON (bez markdown):
       res.status(500).json({ message: "Internal error" });
     }
   });
-
+// ─── Stripe / Payment routes ─────────────────────────────────────────────────
   // ─── Stripe / Payment routes ─────────────────────────────────────────────────
-
+  // ─── Stripe / Payment routes ─────────────────────────────────────────────────
   app.get("/api/stripe/status", async (_req, res) => {
     const connected = await isStripeConnected();
     res.json({ connected });
@@ -1044,23 +1044,33 @@ Vrať POUZE čistý JSON (bez markdown):
     }
   });
 
-  return httpServer;
-}
-app.get("/pay", async (req, res) => {
-  try {
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+  // ─── /pay route pro rychlý checkout ─────────────────────────────────────────────
+  app.get("/pay", async (req, res) => {
+    try {
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-    const session = await stripeService.createCheckoutSession(
-      "test_customer", // klidně natvrdo
-      "price_13,99$",    // ← SEM dej svůj reálnej priceId
-      `${baseUrl}/payment/success`,
-      `${baseUrl}/payment/cancel`,
-      "payment"
-    );
+      // ← sem doplň svůj reálný priceId a případně testovací customerId
+      const priceId = "price_1234567890";
+      const customerId = "cus_test123456";
 
-    res.redirect(session.url);
-  } catch (err: any) {
-    console.error("PAY ERROR:", err.message);
-    res.status(500).send("Stripe error");
-  }
-});
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
+
+      const price = await stripe.prices.retrieve(priceId);
+      const mode = price.recurring ? "subscription" : "payment";
+
+      const session = await stripeService.createCheckoutSession(
+        customerId,
+        priceId,
+        `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+        `${baseUrl}/payment/cancel`,
+        mode
+      );
+
+      res.redirect(session.url);
+    } catch (err: any) {
+      console.error("PAY ERROR:", err.message);
+      res.status(500).send("Stripe error");
+    }
+  });
+return httpServer;
