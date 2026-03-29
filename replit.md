@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ninna Ray is an AI-powered OnlyFans agency management platform. It provides a Czech-language AI chat companion (Ninna_Ray🍒) that chats with fans using GPT-4o with SSE streaming and human-like "seen/typing" delays. The app includes a full 3-role agency system: Customer (public chat), Agent (manual reply/takeover), Owner (full admin + AI Manager).
+Ninna Ray is an AI-powered digital agency management platform with in-app Stripe monetization. It provides a Czech-language AI chat companion (Ninna_Ray🍒) that chats with fans using GPT-4o with SSE streaming and human-like "seen/typing" delays. The app includes a full 3-role agency system: Customer (public chat), Agent (manual reply/takeover), Owner (full admin + AI Manager). All monetization happens in-app via Stripe — no external platform redirects.
 
 ## User Preferences
 
@@ -104,17 +104,28 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - `AGENT_PASSWORD` — Password for agent login (default: `agent2025`)
 - `OWNER_PASSWORD` — Password for owner login (default: `owner2025`)
 
-### Stripe Payment Integration
+### Stripe Payment Integration (In-App Only)
 - **Status**: Infrastructure ready, waiting for Stripe account connection
 - **Stripe not yet connected**: App works fine without it — shows "Platby se připravují" to customers
 - **When connected**: Run `npx tsx scripts/seed-products.ts` to create products, then payments activate automatically
-- **Webhook**: Route registered BEFORE `express.json()` in `server/index.ts`
-- **Checkout**: Auto-detects subscription vs one-time payment mode from price type
-- **Products planned**: VIP subscription (monthly/yearly CZK), PPV content, Custom content, Tips
-- **Customer flow**: Chat → VIP crown button → /payment → Stripe Checkout → /payment/success
-- **Owner view**: Manager dashboard → Platby tab — shows Stripe status, products, paying customers
+- **Webhook**: Route registered BEFORE `express.json()` in `server/index.ts`, handles `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`
+- **In-chat purchases**: Content offered via tease→interest→offer flow, Stripe checkout for individual content items
+- **Content checkout**: `POST /api/stripe/content-checkout` creates dynamic price for content items in CZK
+- **Payment tracking**: `payments` table tracks all in-app purchases with status (pending/completed/failed)
+- **Admin metrics**: Revenue, conversions, conversion rate, recent payments in Platby tab
+- **No external redirects**: All monetization happens within the app — no OnlyFans/Fansly links
+- **Customer flow**: Chat → AI tease → content offer → Stripe Checkout → unlock content
+- **Owner view**: Manager dashboard → Platby tab — Stripe status (OK/ERROR), revenue, conversions, payment history
 - **Files**: `server/stripeClient.ts`, `server/webhookHandlers.ts`, `server/stripeService.ts`, `scripts/seed-products.ts`
 - **Pages**: `/payment`, `/payment/success`, `/payment/cancel`
+
+### AI Behavior Strategy
+- **Primary goal**: Build emotional connection, personalize responses, extend conversations
+- **No immediate sales**: Agent never pushes purchases immediately — relationship first
+- **Engagement detection**: AI detects user interest via message length, emotional responses, flirting
+- **Monetization flow**: tease → interest → offer → Stripe payment → unlock content
+- **Engaged users**: Offered exclusive content directly in chat
+- **Disengaged users**: Continue relationship building without sales pressure
 
 ## Key Files
 

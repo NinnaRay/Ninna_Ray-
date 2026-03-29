@@ -1325,9 +1325,10 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
   const [pricingStrategy, setPricingStrategy] = useState<any>(null);
   const [pricingLoading, setPricingLoading] = useState(false);
 
-  const { data: stripeStatus } = useQuery<{ connected: boolean }>({
+  const { data: stripeStatus } = useQuery<{ connected: boolean; totalRevenue: number; totalPayments: number; successfulPayments: number }>({
     queryKey: ["/api/stripe/status"],
     queryFn: () => fetch("/api/stripe/status").then(r => r.json()),
+    refetchInterval: 15000,
   });
 
   const { data: productsData } = useQuery<{ products: any[]; connected: boolean }>({
@@ -1336,9 +1337,19 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
     enabled: !!stripeStatus?.connected,
   });
 
+  const { data: paymentStats } = useQuery<{ totalRevenue: number; totalPayments: number; successfulPayments: number; recentPayments: any[] }>({
+    queryKey: ["/api/payments/stats"],
+    queryFn: () => fetch("/api/payments/stats", { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 15000,
+  });
+
   const connected = stripeStatus?.connected || false;
   const products = productsData?.products || [];
   const usersWithStripe = users.filter(u => u.stripeCustomerId);
+  const revenue = (paymentStats?.totalRevenue || 0) / 100;
+  const conversions = paymentStats?.successfulPayments || 0;
+  const totalAttempts = paymentStats?.totalPayments || 0;
+  const conversionRate = totalAttempts > 0 ? Math.round((conversions / totalAttempts) * 100) : 0;
 
   const analyzePricing = async () => {
     setPricingLoading(true);
@@ -1357,7 +1368,7 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
           <div className={`w-3 h-3 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
           <div>
             <h3 className="font-bold text-sm" data-testid="text-stripe-status">
-              {connected ? "Stripe propojený" : "Stripe nepropojený"}
+              Stripe: {connected ? "✅ OK" : "⚠️ NEPROPOJENÝ"}
             </h3>
             <p className="text-xs text-neutral-400">
               {connected
@@ -1367,6 +1378,42 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
           </div>
         </div>
       </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="p-4 rounded-xl bg-emerald-900/20 border border-emerald-700/30 text-center">
+          <p className="text-2xl font-bold text-emerald-400" data-testid="text-revenue">{revenue.toLocaleString('cs-CZ')} Kč</p>
+          <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider">Revenue</p>
+        </div>
+        <div className="p-4 rounded-xl bg-blue-900/20 border border-blue-700/30 text-center">
+          <p className="text-2xl font-bold text-blue-400" data-testid="text-conversions">{conversions}</p>
+          <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider">Konverze</p>
+        </div>
+        <div className="p-4 rounded-xl bg-purple-900/20 border border-purple-700/30 text-center">
+          <p className="text-2xl font-bold text-purple-400" data-testid="text-conversion-rate">{conversionRate}%</p>
+          <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider">Úspěšnost</p>
+        </div>
+      </div>
+
+      {paymentStats?.recentPayments && paymentStats.recentPayments.length > 0 && (
+        <AccordionCard title={`Poslední platby (${paymentStats.recentPayments.length})`} icon="💰" color="emerald">
+          <div className="space-y-2">
+            {paymentStats.recentPayments.map((p: any) => (
+              <div key={p.id} className="p-3 rounded-lg bg-neutral-800/60 flex items-center justify-between" data-testid={`payment-row-${p.id}`}>
+                <div>
+                  <span className="text-sm font-medium">Platba #{p.id}</span>
+                  <p className="text-xs text-neutral-500">{new Date(p.createdAt).toLocaleString('cs-CZ')}</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-bold">{(p.amount / 100).toLocaleString('cs-CZ')} Kč</span>
+                  <p className={`text-[10px] font-bold ${p.status === 'completed' ? 'text-emerald-400' : p.status === 'failed' ? 'text-red-400' : 'text-amber-400'}`}>
+                    {p.status === 'completed' ? '✅ Úspěšná' : p.status === 'failed' ? '❌ Selhala' : '⏳ Čeká'}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </AccordionCard>
+      )}
 
       <div className="p-4 rounded-xl bg-gradient-to-r from-amber-900/20 to-orange-900/20 border border-amber-700/30">
         <div className="flex items-center justify-between mb-2">
@@ -1379,7 +1426,7 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
             {pricingLoading ? "Analyzuji trh..." : "Analyzovat trh"}
           </button>
         </div>
-        <p className="text-amber-400/60 text-[10px]">Aktuální cena: $14.99/měsíc (OnlyFans)</p>
+        <p className="text-amber-400/60 text-[10px]">Monetizace: In-app Stripe platby za obsah</p>
       </div>
 
       {pricingLoading && (

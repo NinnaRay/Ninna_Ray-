@@ -1,6 +1,6 @@
-import { users, conversations, messages, contentItems, managerActions, managerLog, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem, type ManagerAction, type ManagerLog } from "@shared/schema";
+import { users, conversations, messages, contentItems, managerActions, managerLog, payments, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem, type ManagerAction, type ManagerLog, type Payment, type InsertPayment } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, gte } from "drizzle-orm";
+import { eq, desc, gte, sql } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -32,6 +32,12 @@ export interface IStorage {
   getManagerLogs(limit?: number): Promise<ManagerLog[]>;
   updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<void>;
   deleteUser(userId: number): Promise<void>;
+  createPayment(data: InsertPayment): Promise<Payment>;
+  getPaymentsByUser(userId: number): Promise<Payment[]>;
+  getAllPayments(): Promise<Payment[]>;
+  updatePaymentStatus(id: number, status: string, stripePaymentIntentId?: string): Promise<void>;
+  getPaymentByStripeSession(sessionId: string): Promise<Payment | undefined>;
+  getPaymentStats(): Promise<{ totalRevenue: number; totalPayments: number; successfulPayments: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -185,7 +191,42 @@ export class DatabaseStorage implements IStorage {
     }
     await db.delete(conversations).where(eq(conversations.userId, userId));
     await db.delete(managerActions).where(eq(managerActions.userId, userId));
+    await db.delete(payments).where(eq(payments.userId, userId));
     await db.delete(users).where(eq(users.id, userId));
+  }
+
+  async createPayment(data: InsertPayment): Promise<Payment> {
+    const [payment] = await db.insert(payments).values(data).returning();
+    return payment;
+  }
+
+  async getPaymentsByUser(userId: number): Promise<Payment[]> {
+    return db.select().from(payments).where(eq(payments.userId, userId)).orderBy(desc(payments.createdAt));
+  }
+
+  async getAllPayments(): Promise<Payment[]> {
+    return db.select().from(payments).orderBy(desc(payments.createdAt));
+  }
+
+  async updatePaymentStatus(id: number, status: string, stripePaymentIntentId?: string): Promise<void> {
+    const updates: Record<string, any> = { status };
+    if (stripePaymentIntentId) updates.stripePaymentIntentId = stripePaymentIntentId;
+    await db.update(payments).set(updates).where(eq(payments.id, id));
+  }
+
+  async getPaymentByStripeSession(sessionId: string): Promise<Payment | undefined> {
+    const [payment] = await db.select().from(payments).where(eq(payments.stripeSessionId, sessionId));
+    return payment;
+  }
+
+  async getPaymentStats(): Promise<{ totalRevenue: number; totalPayments: number; successfulPayments: number }> {
+    const allPays = await db.select().from(payments);
+    const successful = allPays.filter(p => p.status === "completed");
+    return {
+      totalRevenue: successful.reduce((sum, p) => sum + p.amount, 0),
+      totalPayments: allPays.length,
+      successfulPayments: successful.length,
+    };
   }
 }
 

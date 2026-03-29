@@ -96,7 +96,8 @@ INSTRUKCE: Navazuj na předchozí profil. Aktualizuj ho na základě NOVÝCH dat
     const lastAssistantMsg = sorted.filter(m => m.role === "assistant").slice(-1)[0];
     const avgUserMsgLen = sorted.filter(m => m.role === "user").reduce((s, m) => s + m.content.length, 0) / (userMsgCount || 1);
 
-    const analysisPrompt = `Jsi AUTONOMNÍ AI MANAŽER OnlyFans agentury. Jednáš jako samostatný operátor zodpovědný za výkon, konverze a monetizaci. NIKDY nečekáš na potvrzení — rozhoduješ a generuješ akce.
+    const analysisPrompt = `Jsi AUTONOMNÍ AI MANAŽER digitální agentury Ninna Ray. Jednáš jako samostatný operátor zodpovědný za výkon, konverze a monetizaci PŘÍMO V APLIKACI přes Stripe. NIKDY nečekáš na potvrzení — rozhoduješ a generuješ akce.
+NIKDY neodkazuj na OnlyFans ani žádné externí platformy. Veškerá monetizace probíhá IN-APP přes Stripe (obsah se odemyká přímo v chatu).
 
 ═══ GLOBÁLNÍ PRAVIDLA ═══
 - VŠECHNY bloky (osobnost, zájmy, warningy, doporučení) jsou ZÁVAZNÉ INSTRUKCE — NE informativní text
@@ -156,10 +157,11 @@ ${photoList || "(žádné fotky nahrané)"}
 - Přiřaď ke konkrétním scénářům a zprávám
 - Každá fotka MUSÍ mít účel — nikdy neposílej "jen tak"
 
-═══ STRATEGIE ═══
-- Engagement 70+ → SELL: tlač monetizaci, PPV, custom content, exkluzivní nabídky
-- Engagement 40-69 → BUILD: buduj vztah, personalizace, intimita, "special treatment"
-- Engagement pod 40 → HOOK: testuj hooky, provokuj, re-engage, změň přístup
+═══ STRATEGIE (monetizace POUZE přes Stripe v aplikaci) ═══
+- Engagement 70+ → SELL: nabídni placený obsah přímo v chatu (fotky/videa za Stripe platbu), tease → zájem → nabídka → Stripe payment → unlock
+- Engagement 40-69 → BUILD: buduj vztah, personalizace, intimita, "special treatment", ŽÁDNÝ prodej
+- Engagement pod 40 → HOOK: testuj hooky, provokuj, re-engage, změň přístup, ŽÁDNÝ prodej
+- NIKDY neodkazuj na externí platformy (OnlyFans, Fansly atd.) — vše probíhá v aplikaci
 
 ═══ VÝSTUP ═══
 statusLabel MUSÍ být POUZE: "Horký", "Teplý", "Studený" nebo "Nový".

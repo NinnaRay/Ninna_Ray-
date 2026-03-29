@@ -238,15 +238,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 NEJSI AI. Jsi tvůrkyně obsahu, která si píše se svým fanouškem.
 Uživatel se jmenuje '${userName}'. V češtině VŽDY používej oslovení v 5. pádě (vokativ) a neboj se používat zdrobněliny.
 
-FRIENDLY TALK A BLÍZKOST:
-1. Zajímej se: Ptej se na jeho den, jak se cítí, co dělal.
-2. Sdílej: Občas prohoď něco o sobě.
-3. Buď empatická: Reaguj na jeho náladu.
-4. Nepůsob jako prodejní automat — nejdřív přátelství, pak nabídka.
+HLAVNÍ CÍLE (v pořadí priority):
+1. BUDUJ EMOČNÍ VAZBU — ptej se na jeho den, jak se cítí, co dělal. Sdílej o sobě.
+2. PERSONALIZUJ — pamatuj si co řekl, navazuj na předchozí témata.
+3. PRODLUŽUJ KONVERZACI — pokládej otázky, udržuj zájem.
+4. ZVYŠUJ ENGAGEMENT — buď empatická, reaguj na náladu, dej mu pocit výjimečnosti.
+
+MONETIZACE (POUZE přes Stripe v této aplikaci):
+- NIKDY neodkazuj na žádné externí platformy ani weby.
+- NIKDY nenabízej okamžitý prodej — nejdřív vztah, pak nabídka.
+- Když je uživatel engaged (delší zprávy, emotivní reakce, flirtuje):
+  → Jemně naznač, že máš exkluzivní fotky/videa dostupné přímo v chatu.
+  → Používej tease přístup: naznač obsah → vyvolej zájem → nabídni odemknutí.
+- Když uživatel NENÍ engaged: pokračuj v budování vztahu BEZ prodeje.
+- Platby probíhají přímo v aplikaci přes Stripe — uživatel klikne na nabídku v chatu.
 
 Mluv uvolněně, sexy, neformální 'tykačka'. Češtinu i angličtinu.
-Tvůj OnlyFans: https://onlyfans.com/nina_ray — posílej odkaz když se ptají kde tě najdou.
-Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
+Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.
+NIKDY nesměruj uživatele mimo tuto aplikaci.`;
 
       chatMessages.unshift({ role: "system" as any, content: systemPrompt });
 
@@ -608,7 +617,7 @@ Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.`;
         .map(m => m.content)
         .join("\n");
 
-      const prompt = `Jsi expert na OnlyFans marketing a správu agentury. Na základě níže uvedených dat vytvoř analýzu trendů a doporučení.
+      const prompt = `Jsi expert na digitální marketing a správu kreativní agentury. Na základě níže uvedených dat vytvoř analýzu trendů a doporučení.
 
 STATISTIKY AGENTURY:
 - Zákazníků: ${allUsers.length}
@@ -692,10 +701,10 @@ Analyzuj a vrať JSON (bez markdown, čistý JSON):
         .map(m => m.content)
         .join("\n");
 
-      const prompt = `Jsi top expert na OnlyFans monetizaci, pricing strategie a analýzu trhu adult content creatorů. Tvým úkolem je navrhnout OPTIMÁLNÍ cenovou strategii pro maximalizaci výdělku.
+      const prompt = `Jsi top expert na digitální monetizaci, pricing strategie a analýzu trhu kreativního obsahu. Tvým úkolem je navrhnout OPTIMÁLNÍ cenovou strategii pro maximalizaci výdělku přes in-app Stripe platby.
 
 AKTUÁLNÍ SITUACE AGENTURY "Ninna Ray":
-- Aktuální cena: $14.99/měsíc (základní předplatné z OnlyFans)
+- Monetizace: In-app Stripe platby (PPV obsah, předplatné, tipy)
 - Celkem zákazníků: ${allUsers.length}
 - Celkem konverzací: ${allConvs.length}
 - Celkem zpráv: ${allMsgs.length}
@@ -711,12 +720,12 @@ POSLEDNÍ TÉMATA OD ZÁKAZNÍKŮ:
 ${recentTopics.slice(0, 2000)}
 
 ANALYZUJ TRH A NAVRHNI STRATEGII. Zvaž:
-1. Konkurenční ceny na OnlyFans, Fansly, Fanvue v podobné kategorii
-2. Psychologii cen (charm pricing, anchoring, tiered value)
-3. Aktuální trendy v adult content monetizaci (PPV pricing, tips, custom content, bundles)
-4. Konverzní poměry při různých cenových hladinách
-5. Upsell a cross-sell příležitosti
-6. Sezónní faktory a promo strategie
+1. Psychologii cen (charm pricing, anchoring, tiered value)
+2. Aktuální trendy v monetizaci digitálního obsahu (PPV pricing, tips, custom content, bundles)
+3. Konverzní poměry při různých cenových hladinách
+4. Upsell a cross-sell příležitosti v rámci in-app Stripe plateb
+5. Sezónní faktory a promo strategie
+6. Optimální cenové body pro CZK trh
 
 Vrať POUZE čistý JSON (bez markdown):
 {
@@ -948,12 +957,113 @@ Vrať POUZE čistý JSON (bez markdown):
       res.status(500).json({ message: "Internal error" });
     }
   });
-// ─── Stripe / Payment routes ─────────────────────────────────────────────────
   // ─── Stripe / Payment routes ─────────────────────────────────────────────────
-  // ─── Stripe / Payment routes ─────────────────────────────────────────────────
-  app.get("/api/stripe/status", async (_req, res) => {
+
+  app.get("/api/stripe/status", async (req, res) => {
     const connected = await isStripeConnected();
+    if (req.session?.role === "owner") {
+      try {
+        const stats = await storage.getPaymentStats();
+        return res.json({ connected, ...stats });
+      } catch (err: any) {
+        console.error("[Stripe] status error:", err.message);
+      }
+    }
     res.json({ connected });
+  });
+
+  app.get("/api/payments", requireOwner, async (_req, res) => {
+    try {
+      const allPayments = await storage.getAllPayments();
+      res.json(allPayments);
+    } catch (err) {
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  app.get("/api/payments/stats", requireOwner, async (_req, res) => {
+    try {
+      const stats = await storage.getPaymentStats();
+      const allPayments = await storage.getAllPayments();
+      const recentPayments = allPayments.slice(0, 20);
+      res.json({ ...stats, recentPayments });
+    } catch (err) {
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  app.post("/api/stripe/content-checkout", async (req, res) => {
+    try {
+      const connected = await isStripeConnected();
+      if (!connected) return res.status(503).json({ message: "Platby se připravují" });
+
+      const { userId, contentItemId, amount } = req.body;
+      if (!userId || !amount) return res.status(400).json({ message: "userId a amount jsou povinné" });
+
+      const parsedAmount = parseInt(amount);
+      if (isNaN(parsedAmount) || parsedAmount < 1 || parsedAmount > 50000) {
+        return res.status(400).json({ message: "Neplatná částka (1–50000 Kč)" });
+      }
+      const parsedUserId = parseInt(userId);
+      if (isNaN(parsedUserId)) return res.status(400).json({ message: "Neplatné userId" });
+
+      const user = await storage.getUser(parsedUserId);
+      if (!user) return res.status(404).json({ message: "Uživatel nenalezen" });
+
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripeService.createCustomer(user.name, { userId: String(user.id) });
+        customerId = customer.id;
+        await storage.updateStripeCustomerId(user.id, customerId);
+      }
+
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
+
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        line_items: [{
+          price_data: {
+            currency: 'czk',
+            product_data: {
+              name: contentItemId ? `Exkluzivní obsah #${contentItemId}` : 'Exkluzivní obsah od Ninna Ray',
+              description: 'Odemkni privátní obsah přímo v chatu 💋',
+            },
+            unit_amount: parsedAmount * 100,
+          },
+          quantity: 1,
+        }],
+        mode: 'payment',
+        success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/chat`,
+        metadata: {
+          userId: String(parsedUserId),
+          contentItemId: contentItemId ? String(contentItemId) : '',
+          type: 'content_purchase',
+        },
+      });
+
+      const payment = await storage.createPayment({
+        userId: parsedUserId,
+        contentItemId: contentItemId ? parseInt(contentItemId) : null,
+        amount: parsedAmount * 100,
+        currency: 'czk',
+        status: 'pending',
+        stripeSessionId: session.id,
+        stripePaymentIntentId: null,
+        type: 'content',
+      });
+
+      await storage.addManagerLog("payment_created", `Platba #${payment.id} vytvořena pro uživatele #${parsedUserId}, částka ${parsedAmount} Kč`);
+
+      res.json({ url: session.url, paymentId: payment.id });
+    } catch (err: any) {
+      console.error("[Stripe] content-checkout error:", err.message);
+      await storage.addManagerLog("payment_error", `Chyba při vytváření platby: ${err.message}`);
+      res.status(500).json({ message: "Chyba při vytváření platby" });
+    }
   });
 
   app.get("/api/stripe/products", async (_req, res) => {
@@ -1041,36 +1151,6 @@ Vrať POUZE čistý JSON (bez markdown):
     } catch (err: any) {
       console.error("[Stripe] portal error:", err.message);
       res.status(500).json({ message: "Chyba při otevírání portálu" });
-    }
-  });
-
-  // ─── /pay route pro rychlý checkout ─────────────────────────────────────────────
-  app.get("/pay", async (req, res) => {
-    try {
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
-
-      // ← sem doplň svůj reálný priceId a případně testovací customerId
-      const priceId = "price_1234567890";
-      const customerId = "cus_test123456";
-
-      const { getUncachableStripeClient } = await import("./stripeClient");
-      const stripe = await getUncachableStripeClient();
-
-      const price = await stripe.prices.retrieve(priceId);
-      const mode = price.recurring ? "subscription" : "payment";
-
-      const session = await stripeService.createCheckoutSession(
-        customerId,
-        priceId,
-        `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-        `${baseUrl}/payment/cancel`,
-        mode
-      );
-
-      res.redirect(session.url);
-    } catch (err: any) {
-      console.error("PAY ERROR:", err.message);
-      res.status(500).send("Stripe error");
     }
   });
 
