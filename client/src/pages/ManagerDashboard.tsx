@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { cs } from "date-fns/locale";
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 type ActionItem = {
   message: string;
@@ -945,7 +946,7 @@ type ManagerActionRecord = {
   createdAt: string;
 };
 
-function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?: (tab: "overview" | "customers" | "vault" | "trends" | "broadcast" | "payments" | "market", filter?: string, group?: string) => void }) {
+function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?: (tab: "overview" | "customers" | "vault" | "trends" | "broadcast" | "payments" | "market" | "analytics" | "report", filter?: string, group?: string) => void }) {
   const qc = useQueryClient();
   const { data: engineStatus } = useQuery<EngineStatus>({
     queryKey: ["/api/manager/engine-status"],
@@ -1756,6 +1757,342 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
   );
 }
 
+type TimelinePoint = { date: string; revenue: number; transactions: number; newUsers: number; activeUsers: number; messages: number };
+type FunnelStage = { stage: string; label: string; count: number; percentage: number; color: string };
+type ContentPerf = { id: number; name: string; category: string; timesUsed: number; timesSold: number; revenue: number; conversionRate: number; avgPrice: number; tags: string[] };
+type UserLTV = { userId: number; name: string; totalSpent: number; transactionCount: number; avgTransaction: number; firstPurchase: string | null; lastPurchase: string | null; daysSinceFirst: number; monthlyValue: number; predictedLTV: number; segment: string; engagementScore: number; relationshipStage: string };
+type DailyReport = {
+  generatedAt: string; period: string; revenue24h: number; transactions24h: number; newUsers24h: number; activeUsers24h: number; messages24h: number;
+  funnelSnapshot: FunnelStage[]; topContent: ContentPerf[]; topSpenders: { name: string; spent: number }[];
+  engineActions24h: { total: number; executed: number; pending: number; failed: number };
+  responseRate: number; avgEngagement: number; strategicNotes: string[];
+};
+
+const chartTooltipStyle = { contentStyle: { background: "#171717", border: "1px solid #333", borderRadius: "8px", fontSize: "11px", color: "#e5e5e5" } };
+
+const safeFetch = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`API error: ${r.status}`);
+  return r.json();
+};
+
+function AnalyticsTab() {
+  const { data: timeline, isLoading: loadingTimeline, isError: errTimeline } = useQuery<TimelinePoint[]>({
+    queryKey: ["/api/manager/analytics/timeline"],
+    refetchInterval: 120000,
+    queryFn: () => safeFetch("/api/manager/analytics/timeline"),
+  });
+  const { data: funnel, isLoading: loadingFunnel } = useQuery<FunnelStage[]>({
+    queryKey: ["/api/manager/analytics/funnel"],
+    refetchInterval: 60000,
+    queryFn: () => safeFetch("/api/manager/analytics/funnel"),
+  });
+  const { data: contentPerf } = useQuery<ContentPerf[]>({
+    queryKey: ["/api/manager/analytics/content-performance"],
+    refetchInterval: 120000,
+    queryFn: () => safeFetch("/api/manager/analytics/content-performance"),
+  });
+  const { data: ltvData } = useQuery<UserLTV[]>({
+    queryKey: ["/api/manager/analytics/ltv"],
+    refetchInterval: 120000,
+    queryFn: () => safeFetch("/api/manager/analytics/ltv"),
+  });
+
+  if (loadingTimeline || loadingFunnel) return <div className="flex-1 flex items-center justify-center text-neutral-600">Načítám analytiku...</div>;
+
+  const shortDate = (d: string) => { const p = d.split("-"); return `${p[2]}.${p[1]}.`; };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="revenue-chart">
+        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Revenue (30 dní)</p>
+        <div className="h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={timeline}>
+              <defs>
+                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+              <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fill: "#737373", fontSize: 9 }} axisLine={false} />
+              <YAxis tick={{ fill: "#737373", fontSize: 9 }} axisLine={false} tickFormatter={v => `${v} Kč`} />
+              <Tooltip {...chartTooltipStyle} formatter={(v: number) => [`${v} Kč`, "Revenue"]} labelFormatter={shortDate} />
+              <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="url(#revGrad)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="messages-chart">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Zprávy / den</p>
+          <div className="h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={timeline}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fill: "#737373", fontSize: 8 }} axisLine={false} />
+                <YAxis tick={{ fill: "#737373", fontSize: 8 }} axisLine={false} />
+                <Tooltip {...chartTooltipStyle} labelFormatter={shortDate} />
+                <Bar dataKey="messages" fill="#6366f1" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="users-chart">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Noví uživatelé / den</p>
+          <div className="h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={timeline}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fill: "#737373", fontSize: 8 }} axisLine={false} />
+                <YAxis tick={{ fill: "#737373", fontSize: 8 }} axisLine={false} />
+                <Tooltip {...chartTooltipStyle} labelFormatter={shortDate} />
+                <Line type="monotone" dataKey="newUsers" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="activeUsers" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="5 5" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {funnel && funnel.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="sales-funnel">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Prodejní trychtýř</p>
+          <div className="space-y-1.5">
+            {funnel.filter(f => f.stage !== "all").map(f => {
+              const maxCount = Math.max(...funnel.filter(x => x.stage !== "all").map(x => x.count), 1);
+              return (
+                <div key={f.stage} className="flex items-center gap-2">
+                  <span className="text-[10px] text-neutral-500 w-14 shrink-0">{f.label}</span>
+                  <div className="flex-1 bg-neutral-800 rounded-full h-6 overflow-hidden relative">
+                    <motion.div
+                      className="h-full rounded-full flex items-center justify-end pr-2"
+                      style={{ backgroundColor: f.color }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.max(5, (f.count / maxCount) * 100)}%` }}
+                      transition={{ duration: 0.8, ease: "easeOut" }}
+                    >
+                      <span className="text-[9px] font-bold text-white drop-shadow">{f.count}</span>
+                    </motion.div>
+                  </div>
+                  <span className="text-[9px] text-neutral-500 w-8 text-right">{f.percentage}%</span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[8px] text-neutral-600 mt-2 text-center">Celkem: {funnel.find(f => f.stage === "all")?.count || 0} zákazníků</p>
+        </div>
+      )}
+
+      {contentPerf && contentPerf.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="content-performance">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Výkon obsahu (Vault)</p>
+          <div className="space-y-1.5">
+            {contentPerf.slice(0, 8).map((c, i) => (
+              <div key={c.id} className="flex items-center gap-2 bg-neutral-800/50 rounded-lg px-3 py-2">
+                <span className="text-[10px] text-neutral-500 w-4">{i + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-white truncate">{c.name}</p>
+                  <div className="flex gap-1 mt-0.5">
+                    {c.tags.slice(0, 3).map(t => <span key={t} className="text-[7px] px-1 py-0.5 bg-neutral-700 text-neutral-400 rounded">{t}</span>)}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[10px] font-bold text-emerald-400">{c.revenue} Kč</p>
+                  <p className="text-[8px] text-neutral-500">{c.timesSold}x prodáno | {c.conversionRate}% konv.</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ltvData && ltvData.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="ltv-table">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Lifetime Value zákazníků</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px]">
+              <thead>
+                <tr className="text-neutral-500 border-b border-neutral-800">
+                  <th className="text-left py-1.5 px-1">Zákazník</th>
+                  <th className="text-center py-1.5 px-1">Utraceno</th>
+                  <th className="text-center py-1.5 px-1">Měsíčně</th>
+                  <th className="text-center py-1.5 px-1">LTV (6M)</th>
+                  <th className="text-center py-1.5 px-1">Segment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ltvData.filter(u => u.totalSpent > 0 || u.engagementScore > 30).slice(0, 15).map(u => (
+                  <tr key={u.userId} className="border-b border-neutral-800/50">
+                    <td className="py-1.5 px-1 text-white font-bold">{u.name}</td>
+                    <td className="py-1.5 px-1 text-center text-emerald-400">{u.totalSpent} Kč</td>
+                    <td className="py-1.5 px-1 text-center text-blue-400">{u.monthlyValue} Kč</td>
+                    <td className="py-1.5 px-1 text-center text-violet-400 font-bold">{u.predictedLTV} Kč</td>
+                    <td className="py-1.5 px-1 text-center">
+                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold ${u.segment === "vip" ? "bg-yellow-500/20 text-yellow-400" : u.segment === "mid" ? "bg-blue-500/20 text-blue-400" : u.segment === "low" ? "bg-neutral-700 text-neutral-400" : "bg-red-500/10 text-red-400"}`}>{u.segment.toUpperCase()}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportTab() {
+  const { data: report, isLoading, isError } = useQuery<DailyReport>({
+    queryKey: ["/api/manager/analytics/report"],
+    refetchInterval: 300000,
+    queryFn: () => safeFetch("/api/manager/analytics/report"),
+  });
+
+  if (isLoading || !report) return <div className="flex-1 flex items-center justify-center text-neutral-600">Generuji report...</div>;
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="bg-gradient-to-r from-violet-500/10 to-emerald-500/10 border border-violet-500/20 rounded-xl p-4" data-testid="report-header">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[13px] font-bold text-white">REPORT AI MANAŽERA</p>
+          <p className="text-[9px] text-neutral-400">{new Date(report.generatedAt).toLocaleString("cs-CZ")}</p>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          <div className="text-center">
+            <p className="text-lg font-bold text-emerald-400">{report.revenue24h} Kč</p>
+            <p className="text-[8px] text-neutral-500">Tržby 24h</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-blue-400">{report.transactions24h}</p>
+            <p className="text-[8px] text-neutral-500">Prodeje</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-violet-400">{report.newUsers24h}</p>
+            <p className="text-[8px] text-neutral-500">Noví</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-amber-400">{report.activeUsers24h}</p>
+            <p className="text-[8px] text-neutral-500">Aktivní</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-neutral-300">{report.messages24h}</p>
+            <p className="text-[8px] text-neutral-500">Zpráv</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="report-funnel">
+        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Stav trychtýře</p>
+        <div className="flex items-end gap-1 justify-center h-24">
+          {(() => { const stages = report.funnelSnapshot.filter(f => f.stage !== "all"); const maxC = Math.max(...stages.map(s => s.count), 1); return stages.map(f => (
+            <div key={f.stage} className="flex flex-col items-center gap-1">
+              <motion.div
+                className="rounded-t-md w-10"
+                style={{ backgroundColor: f.color }}
+                initial={{ height: 0 }}
+                animate={{ height: Math.max(8, (f.count / maxC) * 80) }}
+                transition={{ duration: 0.6 }}
+              />
+              <p className="text-[8px] font-bold text-white">{f.count}</p>
+              <p className="text-[7px] text-neutral-500">{f.label}</p>
+            </div>
+          )); })()}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="report-engine-actions">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Engine akce (24h)</p>
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-[10px]">
+              <span className="text-neutral-500">Celkem:</span>
+              <span className="text-white font-bold">{report.engineActions24h.total}</span>
+            </div>
+            <div className="flex justify-between text-[10px]">
+              <span className="text-neutral-500">Provedeno:</span>
+              <span className="text-emerald-400 font-bold">{report.engineActions24h.executed}</span>
+            </div>
+            <div className="flex justify-between text-[10px]">
+              <span className="text-neutral-500">Čeká:</span>
+              <span className="text-amber-400 font-bold">{report.engineActions24h.pending}</span>
+            </div>
+            <div className="flex justify-between text-[10px]">
+              <span className="text-neutral-500">Selhalo:</span>
+              <span className="text-red-400 font-bold">{report.engineActions24h.failed}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="report-kpis">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">KPI</p>
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-[10px]">
+              <span className="text-neutral-500">Response rate:</span>
+              <span className={`font-bold ${report.responseRate >= 40 ? "text-emerald-400" : report.responseRate >= 20 ? "text-amber-400" : "text-red-400"}`}>{report.responseRate}%</span>
+            </div>
+            <div className="flex justify-between text-[10px]">
+              <span className="text-neutral-500">Avg engagement:</span>
+              <span className={`font-bold ${report.avgEngagement >= 50 ? "text-emerald-400" : report.avgEngagement >= 30 ? "text-amber-400" : "text-red-400"}`}>{report.avgEngagement}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {report.topContent.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="report-top-content">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">TOP obsah</p>
+          <div className="space-y-1">
+            {report.topContent.map((c, i) => (
+              <div key={c.id} className="flex items-center gap-2 text-[10px]">
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] ${i === 0 ? "bg-yellow-500/20 text-yellow-400" : i === 1 ? "bg-neutral-600 text-neutral-300" : "bg-orange-500/20 text-orange-400"}`}>{i + 1}</span>
+                <span className="text-white flex-1 truncate">{c.name}</span>
+                <span className="text-emerald-400 font-bold">{c.revenue} Kč</span>
+                <span className="text-neutral-500">{c.conversionRate}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {report.topSpenders.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="report-top-spenders">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">TOP zákazníci (24h)</p>
+          <div className="space-y-1">
+            {report.topSpenders.map((s, i) => (
+              <div key={i} className="flex items-center gap-2 text-[10px]">
+                <span className="text-neutral-500 w-4">{i + 1}.</span>
+                <span className="text-white flex-1">{s.name}</span>
+                <span className="text-emerald-400 font-bold">{s.spent} Kč</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {report.strategicNotes.length > 0 && (
+        <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3" data-testid="report-strategic-notes">
+          <p className="text-[11px] font-bold text-amber-300 uppercase tracking-widest mb-2">Strategická doporučení AI</p>
+          <div className="space-y-1.5">
+            {report.strategicNotes.map((note, i) => (
+              <div key={i} className="flex gap-2 text-[10px]">
+                <span className="text-amber-400 shrink-0">→</span>
+                <span className="text-neutral-300">{note}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-center text-[8px] text-neutral-600 py-2">
+        Report generován: {new Date(report.generatedAt).toLocaleString("cs-CZ")} | Období: {report.period}
+      </div>
+    </div>
+  );
+}
+
 type MarketIntelligenceData = {
   marketData: {
     lastUpdated: string;
@@ -1784,7 +2121,7 @@ function MarketTab() {
   const { data: intel, isLoading } = useQuery<MarketIntelligenceData>({
     queryKey: ["/api/manager/market-intelligence"],
     refetchInterval: 60000,
-    queryFn: () => fetch("/api/manager/market-intelligence").then(r => r.json()),
+    queryFn: () => safeFetch("/api/manager/market-intelligence"),
   });
 
   if (isLoading || !intel) return <div className="flex-1 flex items-center justify-center text-neutral-600">Načítám tržní data...</div>;
@@ -1956,7 +2293,7 @@ function MarketTab() {
 
 export default function ManagerDashboard() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast" | "payments" | "market">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast" | "payments" | "market" | "analytics" | "report">("overview");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [initialFilter, setInitialFilter] = useState<string | undefined>(undefined);
   const qc = useQueryClient();
@@ -1984,6 +2321,8 @@ export default function ManagerDashboard() {
     { id: "trends" as const, icon: "📊", label: "Trendy" },
     { id: "broadcast" as const, icon: "📢", label: "Broadcast" },
     { id: "payments" as const, icon: "💳", label: "Platby" },
+    { id: "analytics" as const, icon: "📉", label: "Analytika" },
+    { id: "report" as const, icon: "📋", label: "Report" },
     { id: "market" as const, icon: "📈", label: "Trh" },
   ];
 
@@ -2021,6 +2360,8 @@ export default function ManagerDashboard() {
         {activeTab === "trends" && <TrendsTab />}
         {activeTab === "broadcast" && <BroadcastTab />}
         {activeTab === "payments" && <PaymentsTab users={users} />}
+        {activeTab === "analytics" && <AnalyticsTab />}
+        {activeTab === "report" && <ReportTab />}
         {activeTab === "market" && <MarketTab />}
       </div>
     </div>

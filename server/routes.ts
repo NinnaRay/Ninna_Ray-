@@ -531,6 +531,52 @@ NIKDY nesměruj uživatele mimo tuto aplikaci. NIKDY neodkazuj na žádné exter
     }
   });
 
+  app.get("/api/manager/analytics/timeline", requireOwner, async (_req, res) => {
+    try {
+      const { getDailyTimeline } = await import("./analytics-engine");
+      const days = parseInt((_req.query.days as string) || "30");
+      res.json(await getDailyTimeline(days));
+    } catch (err) {
+      res.status(500).json({ message: "Chyba analytiky" });
+    }
+  });
+
+  app.get("/api/manager/analytics/funnel", requireOwner, async (_req, res) => {
+    try {
+      const { getSalesFunnel } = await import("./analytics-engine");
+      res.json(await getSalesFunnel());
+    } catch (err) {
+      res.status(500).json({ message: "Chyba funnelu" });
+    }
+  });
+
+  app.get("/api/manager/analytics/content-performance", requireOwner, async (_req, res) => {
+    try {
+      const { getContentPerformance } = await import("./analytics-engine");
+      res.json(await getContentPerformance());
+    } catch (err) {
+      res.status(500).json({ message: "Chyba výkonu obsahu" });
+    }
+  });
+
+  app.get("/api/manager/analytics/ltv", requireOwner, async (_req, res) => {
+    try {
+      const { getUserLTVs } = await import("./analytics-engine");
+      res.json(await getUserLTVs());
+    } catch (err) {
+      res.status(500).json({ message: "Chyba LTV" });
+    }
+  });
+
+  app.get("/api/manager/analytics/report", requireOwner, async (_req, res) => {
+    try {
+      const { generateDailyReport } = await import("./analytics-engine");
+      res.json(await generateDailyReport());
+    } catch (err) {
+      res.status(500).json({ message: "Chyba reportu" });
+    }
+  });
+
   app.get("/api/manager/actions", requireOwner, async (req, res) => {
     try {
       const since = req.query.since ? new Date(req.query.since as string) : undefined;
