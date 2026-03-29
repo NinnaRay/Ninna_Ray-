@@ -945,7 +945,7 @@ type ManagerActionRecord = {
   createdAt: string;
 };
 
-function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?: (tab: "overview" | "customers" | "vault" | "trends" | "broadcast" | "payments", filter?: string, group?: string) => void }) {
+function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?: (tab: "overview" | "customers" | "vault" | "trends" | "broadcast" | "payments" | "market", filter?: string, group?: string) => void }) {
   const qc = useQueryClient();
   const { data: engineStatus } = useQuery<EngineStatus>({
     queryKey: ["/api/manager/engine-status"],
@@ -1756,9 +1756,207 @@ function PaymentsTab({ users }: { users: ManagerUser[] }) {
   );
 }
 
+type MarketIntelligenceData = {
+  marketData: {
+    lastUpdated: string;
+    currency: string;
+    tiers: { name: string; label: string; priceRange: { min: number; max: number }; description: string; conversionBenchmark: number }[];
+    contentPricing: { type: string; label: string; tiers: { low: { min: number; max: number }; mid: { min: number; max: number }; high: { min: number; max: number } } }[];
+    benchmarks: { avgConversionRate: number; avgFirstPurchase: number; avgRepeatPurchase: number; avgLifetimeValue: number; optimalFirstOffer: { min: number; max: number } };
+    trendingContent: string[];
+    leadSources: { platform: string; potential: string; strategy: string }[];
+  };
+  internalMetrics: {
+    totalRevenue: number;
+    totalTransactions: number;
+    avgTransactionValue: number;
+    conversionRate: number;
+    bestSellingPriceRange: { min: number; max: number } | null;
+    priceDistribution: { range: string; count: number; revenue: number }[];
+    recentTrend: string;
+    userSegments: { highSpenders: number; midSpenders: number; lowSpenders: number; nonBuyers: number };
+  };
+  trendScore: number;
+  recommendations: { type: string; priority: string; title: string; description: string; dataSource: string }[];
+};
+
+function MarketTab() {
+  const { data: intel, isLoading } = useQuery<MarketIntelligenceData>({
+    queryKey: ["/api/manager/market-intelligence"],
+    refetchInterval: 60000,
+    queryFn: () => fetch("/api/manager/market-intelligence").then(r => r.json()),
+  });
+
+  if (isLoading || !intel) return <div className="flex-1 flex items-center justify-center text-neutral-600">Načítám tržní data...</div>;
+
+  const m = intel.internalMetrics;
+  const md = intel.marketData;
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="grid grid-cols-4 gap-2">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="metric-trend-score">
+          <p className={`text-lg font-bold ${intel.trendScore >= 60 ? "text-emerald-400" : intel.trendScore >= 40 ? "text-amber-400" : "text-red-400"}`}>{intel.trendScore}</p>
+          <p className="text-[9px] text-neutral-500">Trend Score</p>
+        </div>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="metric-revenue">
+          <p className="text-lg font-bold text-emerald-400">{m.totalRevenue} Kč</p>
+          <p className="text-[9px] text-neutral-500">Revenue</p>
+        </div>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="metric-conversion">
+          <p className={`text-lg font-bold ${m.conversionRate >= md.benchmarks.avgConversionRate ? "text-emerald-400" : "text-amber-400"}`}>{m.conversionRate}%</p>
+          <p className="text-[9px] text-neutral-500">Konverze</p>
+          <p className="text-[8px] text-neutral-600">benchmark: {md.benchmarks.avgConversionRate}%</p>
+        </div>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-center" data-testid="metric-avg-tx">
+          <p className="text-lg font-bold text-blue-400">{m.avgTransactionValue} Kč</p>
+          <p className="text-[9px] text-neutral-500">Avg platba</p>
+        </div>
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="market-tiers">
+        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Cenové tiers (tržní benchmarky)</p>
+        <div className="space-y-1.5">
+          {md.tiers.map(t => (
+            <div key={t.name} className="flex items-center justify-between bg-neutral-800/50 rounded-lg px-3 py-2">
+              <div>
+                <p className="text-[11px] font-bold text-white">{t.label}</p>
+                <p className="text-[9px] text-neutral-500">{t.description}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[11px] font-bold text-emerald-400">{t.priceRange.min}-{t.priceRange.max} Kč</p>
+                <p className="text-[9px] text-neutral-500">konverze: {t.conversionBenchmark}%</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {m.bestSellingPriceRange && (
+        <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3" data-testid="best-selling-range">
+          <p className="text-[11px] font-bold text-emerald-300">Nejúspěšnější cenový rozsah (z interních dat)</p>
+          <p className="text-lg font-bold text-emerald-400">{m.bestSellingPriceRange.min}-{m.bestSellingPriceRange.max} Kč</p>
+        </div>
+      )}
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="price-distribution">
+        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Distribuce prodejů podle ceny</p>
+        <div className="space-y-1">
+          {m.priceDistribution.map(pd => (
+            <div key={pd.range} className="flex items-center gap-2">
+              <span className="text-[10px] text-neutral-500 w-16 shrink-0">{pd.range}</span>
+              <div className="flex-1 bg-neutral-800 rounded-full h-3 overflow-hidden">
+                <div className="bg-violet-500/60 h-full rounded-full" style={{ width: `${m.totalTransactions > 0 ? Math.max(2, (pd.count / m.totalTransactions) * 100) : 0}%` }} />
+              </div>
+              <span className="text-[10px] text-neutral-400 w-10 text-right">{pd.count}x</span>
+              <span className="text-[10px] text-emerald-400/70 w-16 text-right">{pd.revenue} Kč</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="user-segments">
+        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Segmenty zákazníků</p>
+        <div className="grid grid-cols-4 gap-2">
+          <div className="text-center p-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+            <p className="text-sm font-bold text-yellow-400">{m.userSegments.highSpenders}</p>
+            <p className="text-[8px] text-neutral-500">VIP (500+ Kč)</p>
+          </div>
+          <div className="text-center p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <p className="text-sm font-bold text-blue-400">{m.userSegments.midSpenders}</p>
+            <p className="text-[8px] text-neutral-500">Mid (100-499)</p>
+          </div>
+          <div className="text-center p-2 bg-neutral-700/30 border border-neutral-600/30 rounded-lg">
+            <p className="text-sm font-bold text-neutral-400">{m.userSegments.lowSpenders}</p>
+            <p className="text-[8px] text-neutral-500">Low (1-99)</p>
+          </div>
+          <div className="text-center p-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <p className="text-sm font-bold text-red-400">{m.userSegments.nonBuyers}</p>
+            <p className="text-[8px] text-neutral-500">Nekupují</p>
+          </div>
+        </div>
+      </div>
+
+      {intel.recommendations.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="recommendations">
+          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">AI Doporučení (data-driven)</p>
+          <div className="space-y-2">
+            {intel.recommendations.map((rec, i) => (
+              <div key={i} className={`p-2.5 rounded-lg border ${rec.priority === "high" ? "bg-red-500/5 border-red-500/20" : rec.priority === "medium" ? "bg-amber-500/5 border-amber-500/20" : "bg-neutral-800/50 border-neutral-700/30"}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${rec.priority === "high" ? "bg-red-500/20 text-red-400" : rec.priority === "medium" ? "bg-amber-500/20 text-amber-400" : "bg-neutral-700 text-neutral-400"}`}>{rec.priority}</span>
+                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${rec.type === "pricing" ? "bg-emerald-500/20 text-emerald-400" : rec.type === "lead_gen" ? "bg-blue-500/20 text-blue-400" : rec.type === "content" ? "bg-violet-500/20 text-violet-400" : "bg-neutral-700 text-neutral-400"}`}>{rec.type}</span>
+                  <span className="text-[10px] font-bold text-white">{rec.title}</span>
+                </div>
+                <p className="text-[10px] text-neutral-400">{rec.description}</p>
+                <p className="text-[8px] text-neutral-600 mt-1">Zdroj: {rec.dataSource}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="content-pricing">
+        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Ceny podle typu obsahu (tržní data)</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[10px]">
+            <thead>
+              <tr className="text-neutral-500 border-b border-neutral-800">
+                <th className="text-left py-1.5 px-2">Typ</th>
+                <th className="text-center py-1.5 px-2">Low</th>
+                <th className="text-center py-1.5 px-2">Mid</th>
+                <th className="text-center py-1.5 px-2">High</th>
+              </tr>
+            </thead>
+            <tbody>
+              {md.contentPricing.map(cp => (
+                <tr key={cp.type} className="border-b border-neutral-800/50">
+                  <td className="py-1.5 px-2 text-white font-bold">{cp.label}</td>
+                  <td className="py-1.5 px-2 text-center text-neutral-400">{cp.tiers.low.min}-{cp.tiers.low.max} Kč</td>
+                  <td className="py-1.5 px-2 text-center text-blue-400">{cp.tiers.mid.min}-{cp.tiers.mid.max} Kč</td>
+                  <td className="py-1.5 px-2 text-center text-emerald-400">{cp.tiers.high.min}-{cp.tiers.high.max} Kč</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="trending-content">
+        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Trending obsah</p>
+        <div className="space-y-1">
+          {md.trendingContent.map((t, i) => (
+            <div key={i} className="flex items-center gap-2 text-[10px]">
+              <span className="text-emerald-400">•</span>
+              <span className="text-neutral-300">{t}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3" data-testid="lead-sources">
+        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-2">Lead generation - zdroje trafficu</p>
+        <div className="space-y-1.5">
+          {md.leadSources.map((ls, i) => (
+            <div key={i} className="flex items-center gap-3 bg-neutral-800/50 rounded-lg px-3 py-2">
+              <span className="text-[11px] font-bold text-white w-20 shrink-0">{ls.platform}</span>
+              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${ls.potential === "vysoký" ? "bg-emerald-500/20 text-emerald-400" : ls.potential === "střední" ? "bg-amber-500/20 text-amber-400" : "bg-neutral-700 text-neutral-400"}`}>{ls.potential}</span>
+              <span className="text-[10px] text-neutral-400 flex-1">{ls.strategy}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="text-center text-[8px] text-neutral-600 py-2">
+        Tržní data aktualizována: {new Date(md.lastUpdated).toLocaleString("cs-CZ")} | Trend: {m.recentTrend === "growing" ? "rostoucí" : m.recentTrend === "stable" ? "stabilní" : m.recentTrend === "declining" ? "klesající" : "nedostatek dat"}
+      </div>
+    </div>
+  );
+}
+
 export default function ManagerDashboard() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast" | "payments">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast" | "payments" | "market">("overview");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [initialFilter, setInitialFilter] = useState<string | undefined>(undefined);
   const qc = useQueryClient();
@@ -1786,6 +1984,7 @@ export default function ManagerDashboard() {
     { id: "trends" as const, icon: "📊", label: "Trendy" },
     { id: "broadcast" as const, icon: "📢", label: "Broadcast" },
     { id: "payments" as const, icon: "💳", label: "Platby" },
+    { id: "market" as const, icon: "📈", label: "Trh" },
   ];
 
   return (
@@ -1822,6 +2021,7 @@ export default function ManagerDashboard() {
         {activeTab === "trends" && <TrendsTab />}
         {activeTab === "broadcast" && <BroadcastTab />}
         {activeTab === "payments" && <PaymentsTab users={users} />}
+        {activeTab === "market" && <MarketTab />}
       </div>
     </div>
   );

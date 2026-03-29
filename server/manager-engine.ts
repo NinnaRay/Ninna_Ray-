@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import OpenAI from "openai";
+import { getMarketContext, getPricingForUser, getMarketIntelligence } from "./market-intelligence";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -95,6 +96,10 @@ export function setEnginePaused(paused: boolean) {
     setTimeout(() => runFullScan(), 6000);
   }
 }
+
+const MARKET_BENCHMARKS_REF = {
+  optimalFirst: { min: 39, max: 79 },
+};
 
 async function analyzeUser(userId: number, userName: string): Promise<any | null> {
   try {
@@ -240,10 +245,24 @@ ${photoList || "(žádné fotky nahrané)"}
 - Přiřaď ke konkrétním scénářům a zprávám
 - Každá fotka MUSÍ mít účel — nikdy neposílej "jen tak"
 
-═══ REVENUE OPTIMIZATION ═══
-- CENOVÁ STRATEGIE: ${completedPayments.length >= 2 ? `Zákazník už utratil ${totalSpent} Kč (průměr ${avgPayment} Kč). Nastav cenu o 10-20% výš než jeho průměr pro upsell.` : completedPayments.length === 1 ? `Zákazník koupil jednou za ${totalSpent} Kč. Druhá nabídka by měla být za podobnou nebo mírně vyšší cenu.` : `Zákazník zatím nekoupil. První nabídka musí být nízká (49-99 Kč) jako test.`}
+═══ REVENUE OPTIMIZATION (DATA-DRIVEN — ŽÁDNÉ NÁHODNÉ CENY) ═══
+${getMarketContext()}
+
+INTERNÍ DATA TOHOTO ZÁKAZNÍKA:
+- Celkem utraceno: ${totalSpent} Kč | Počet nákupů: ${completedPayments.length} | Průměrná platba: ${avgPayment} Kč
+- Cenový rozsah nákupů: ${completedPayments.length > 0 ? `${Math.min(...completedPayments.map(p => p.amount)) / 100}-${Math.max(...completedPayments.map(p => p.amount)) / 100} Kč` : "žádné"}
+- Cenová citlivost: ${existingProfile?.priceSensitivity || "neznámá"}
+
+PRAVIDLA PRO CENU suggestedPrice:
+1. NIKDY nevymýšlej cenu z hlavy — VŽDY použij tržní tiers + historii zákazníka
+2. První nákup → použij "Entry" tier (${MARKET_BENCHMARKS_REF.optimalFirst.min}-${MARKET_BENCHMARKS_REF.optimalFirst.max} Kč)
+3. Opakovaný nákup → cena = průměr předchozích nákupů * 1.05-1.15 (v rámci odpovídajícího tieru)
+4. Vysoká cenová citlivost → -15% z vypočtené ceny
+5. Nízká cenová citlivost → +10% z vypočtené ceny
+6. Pokud nemáš dost dat → suggestedPrice = 0 (nenavrhuj cenu)
+
 - A/B PŘÍSTUP: ${existingProfile?.sellStyle === "direct" ? "Zkus tentokrát NEPŘÍMÝ přístup (tease, curiosity gap)." : existingProfile?.sellStyle === "indirect" ? "Zkus tentokrát PŘÍMÝ přístup (jasná nabídka, urgency)." : "Testuj oba přístupy — zapiš co funguje do sellStyle."}
-- PRESSURE CALIBRACE: ${timeSinceLastUserMsg > 48 ? "Zákazník je NEAKTIVNÍ — nulový prodejní tlak, pouze re-engage hook." : timeSinceLastUserMsg > 12 ? "Zákazník je ODMLČENÝ — jemný hook, žádný prodej." : daysSinceLastPurchase > 7 || daysSinceLastPurchase === -1 ? "Zákazník nekoupil nedávno — buduj vztah a teprve pak nabídni." : "Zákazník je AKTIVNÍ kupec — timing pro další nabídku."}
+- PRESSURE CALIBRACE: ${timeSinceLastUserMsg > 48 ? "Zákazník je NEAKTIVNÍ — nulový prodejní tlak, pouze re-engage hook." : timeSinceLastUserMsg > 12 ? "Zákazník je ODMLČENÝ — jemný hook, žádný prodej." : daysSinceLastPurchase > 7 || daysSinceLastPurchase === -1 ? "Zákazník nekoupil nedávno — buduj vztah a teprve pak nabídni." : "Zákazník je AKTIVNÍ kupce — timing pro další nabídku."}
 
 ═══ STRATEGIE (monetizace POUZE přes Stripe v aplikaci) ═══
 - Engagement 70+ → SELL: nabídni placený obsah přímo v chatu (fotky/videa za Stripe platbu), tease → zájem → nabídka → Stripe payment → unlock
@@ -320,6 +339,20 @@ Vrať ČISTÝ JSON (bez markdown):
       if ((!profile.sellStyle || profile.sellStyle === "neznámý") && existingProfile.sellStyle && existingProfile.sellStyle !== "neznámý") {
         profile.sellStyle = existingProfile.sellStyle;
       }
+    }
+
+    try {
+      const pricingResult = await getPricingForUser(userId, undefined);
+      if (pricingResult.confidence !== "none") {
+        profile.suggestedPrice = pricingResult.suggestedPrice;
+        profile._pricingSource = "engine";
+        profile._pricingConfidence = pricingResult.confidence;
+        profile._pricingRange = pricingResult.priceRange;
+        profile._pricingTier = pricingResult.tier;
+        profile._pricingReasoning = pricingResult.reasoning;
+      }
+    } catch (e) {
+      console.error("[AI Manager] pricing engine fallback:", e);
     }
 
     await storage.updateAiProfile(userId, profile);

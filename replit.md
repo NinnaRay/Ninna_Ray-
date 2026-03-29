@@ -52,12 +52,26 @@ Preferred communication style: Simple, everyday language. Czech language UI.
   - Rate-limited actions are deferred (rescheduled +60min), not dropped
   - Double-send prevention: if last message was assistant and < 10 min ago, defers to +15 min
   - `onNewMessage()` triggers AFTER assistant reply is saved (prevents race condition duplicates)
-- **Revenue optimization loop**:
+- **Revenue optimization loop** (data-driven, NO random pricing):
   - Per-user purchase history injected into analysis (total spent, avg payment, last purchase, price range)
-  - Dynamic pricing: AI suggests prices based on spending patterns (low first purchase → upsell gradually)
+  - **Deterministic pricing engine** (`server/market-intelligence.ts`): all prices derived from CZK market benchmarks + internal conversion data
+  - Market tiers: entry (29-79), standard (99-249), premium (299-599), VIP (699-1999) with per-content-type pricing
+  - Pricing engine overrides LLM-suggested prices server-side — `getPricingForUser()` called after GPT analysis, result replaces `suggestedPrice`
+  - First-buy strategy: optimal first offer 39-79 CZK; repeat buyers: avgPayment * 1.05-1.15 within tier
+  - Price sensitivity adjustments: high → -15%, low → +10%
+  - VIP tier content mapping ensures high-value users never get clamped to lower content ranges
   - A/B sell style testing: alternates between direct/indirect/tease approaches per user
   - Pressure calibration: auto-reduces sell pressure for inactive/unresponsive users
-  - New profile fields: `priceSensitivity`, `sellStyle`, `suggestedPrice`
+  - Profile fields: `priceSensitivity`, `sellStyle`, `suggestedPrice`, `_pricingSource`, `_pricingConfidence`, `_pricingRange`, `_pricingTier`
+- **Market Intelligence Dashboard** (`/manager` → Trh tab):
+  - Trend score, revenue, conversion rate vs benchmark, avg transaction value
+  - Market tier benchmarks with conversion rates
+  - Price distribution by range (from internal data)
+  - Customer segments (VIP/Mid/Low/Non-buyers)
+  - Content-type pricing table (low/mid/high per type)
+  - AI recommendations (data-driven, prioritized)
+  - Lead generation sources with strategies
+  - API: `GET /api/manager/market-intelligence`, `GET /api/manager/pricing/:userId`
 - **Per-user memory** (enhanced):
   - All profile fields preserved across analyses (whatWorks, whatFails, emotionalTriggers, priceSensitivity, sellStyle)
   - Purchase history and pricing context available in both manager analysis AND real-time chat prompt

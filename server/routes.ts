@@ -508,6 +508,29 @@ NIKDY nesměruj uživatele mimo tuto aplikaci. NIKDY neodkazuj na žádné exter
     res.json({ ok: true, paused: !!paused });
   });
 
+  app.get("/api/manager/market-intelligence", requireOwner, async (_req, res) => {
+    try {
+      const { getMarketIntelligence } = await import("./market-intelligence");
+      const data = await getMarketIntelligence();
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ message: "Chyba při načítání tržních dat" });
+    }
+  });
+
+  app.get("/api/manager/pricing/:userId", requireOwner, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const contentType = (req.query.type as string) || "photo_single";
+      if (isNaN(userId)) return res.status(400).json({ message: "Neplatné userId" });
+      const { getPricingForUser } = await import("./market-intelligence");
+      const pricing = await getPricingForUser(userId, contentType);
+      res.json(pricing);
+    } catch (err) {
+      res.status(500).json({ message: "Chyba při výpočtu ceny" });
+    }
+  });
+
   app.get("/api/manager/actions", requireOwner, async (req, res) => {
     try {
       const since = req.query.since ? new Date(req.query.since as string) : undefined;
