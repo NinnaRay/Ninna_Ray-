@@ -13,6 +13,49 @@ const SCAN_INTERVAL = 10 * 60 * 1000;
 const DELAYED_QUEUE: { actionId: number; userId: number; message: string; photoId?: number; executeAt: number }[] = [];
 const logs: { time: string; event: string; detail: string }[] = [];
 
+const messageSendTimes: Record<number, number[]> = {};
+const MAX_MESSAGES_PER_HOUR = 3;
+const MAX_MESSAGES_PER_DAY = 8;
+
+interface LearningData {
+  totalSent: number;
+  totalResponded: number;
+  responseRate: number;
+  bestPurposes: Record<string, { sent: number; responded: number; rate: number }>;
+  bestTimings: Record<string, { sent: number; responded: number; rate: number }>;
+  avgResponseTime: number;
+  lastUpdated: string;
+}
+
+let globalLearnings: LearningData = {
+  totalSent: 0,
+  totalResponded: 0,
+  responseRate: 0,
+  bestPurposes: {},
+  bestTimings: {},
+  avgResponseTime: 0,
+  lastUpdated: new Date().toISOString(),
+};
+
+function canSendToUser(userId: number): boolean {
+  const now = Date.now();
+  if (!messageSendTimes[userId]) messageSendTimes[userId] = [];
+  messageSendTimes[userId] = messageSendTimes[userId].filter(t => now - t < 24 * 60 * 60 * 1000);
+
+  const hourAgo = now - 60 * 60 * 1000;
+  const msgsLastHour = messageSendTimes[userId].filter(t => t > hourAgo).length;
+  const msgsLast24h = messageSendTimes[userId].length;
+
+  if (msgsLastHour >= MAX_MESSAGES_PER_HOUR) return false;
+  if (msgsLast24h >= MAX_MESSAGES_PER_DAY) return false;
+  return true;
+}
+
+function recordSend(userId: number) {
+  if (!messageSendTimes[userId]) messageSendTimes[userId] = [];
+  messageSendTimes[userId].push(Date.now());
+}
+
 function log(event: string, detail: string = "") {
   const entry = { time: new Date().toISOString(), event, detail };
   logs.push(entry);
@@ -34,7 +77,11 @@ export function getManagerStatus() {
       selfLearning: !enginePaused,
       autoMessaging: !enginePaused,
       duplicateDetection: !enginePaused,
+      antiSpam: !enginePaused,
+      revenueOptimization: !enginePaused,
+      perUserMemory: !enginePaused,
     },
+    learnings: globalLearnings,
   };
 }
 
@@ -87,14 +134,47 @@ Co fungovalo: ${(existingProfile.whatWorks || []).join(", ")}
 Co nefungovalo: ${(existingProfile.whatFails || []).join(", ")}
 Předchozí driver: ${existingProfile.mainDriver || "žádný"}
 Předchozí styleNotes: ${existingProfile.styleNotes || "žádné"}
+Cenová citlivost: ${existingProfile.priceSensitivity || "neznámá"}
+Preferovaný prodejní styl: ${existingProfile.sellStyle || "neznámý"}
 
 INSTRUKCE: Navazuj na předchozí profil. Aktualizuj ho na základě NOVÝCH dat. Porovnej, co se změnilo od poslední analýzy. Zachovej co funguje, eliminuj co nefunguje.` : "";
+
+    const userPayments = await storage.getPaymentsByUser(userId);
+    const completedPayments = userPayments.filter(p => p.status === "completed");
+    const failedPayments = userPayments.filter(p => p.status === "failed");
+    const totalSpent = completedPayments.reduce((s, p) => s + p.amount, 0) / 100;
+    const avgPayment = completedPayments.length > 0 ? Math.round(totalSpent / completedPayments.length) : 0;
+    const lastPurchase = completedPayments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+    const daysSinceLastPurchase = lastPurchase ? Math.round((Date.now() - new Date(lastPurchase.createdAt).getTime()) / (24 * 60 * 60 * 1000)) : -1;
+
+    const purchaseContext = userPayments.length > 0 ? `
+═══ PLATEBNÍ HISTORIE ZÁKAZNÍKA ═══
+Celkem plateb: ${completedPayments.length} úspěšných, ${failedPayments.length} neúspěšných
+Celkem utraceno: ${totalSpent} Kč
+Průměrná platba: ${avgPayment} Kč
+Poslední nákup: ${lastPurchase ? `${daysSinceLastPurchase} dní zpátky (${lastPurchase.amount / 100} Kč)` : "nikdy"}
+Cenový rozsah: ${completedPayments.length > 0 ? `${Math.min(...completedPayments.map(p => p.amount)) / 100}–${Math.max(...completedPayments.map(p => p.amount)) / 100} Kč` : "neznámý"}
+` : `
+═══ PLATEBNÍ HISTORIE ZÁKAZNÍKA ═══
+Zatím žádné nákupy.
+`;
+
+    const learningContext = globalLearnings.totalSent > 0 ? `
+═══ GLOBÁLNÍ LEARNING DATA (self-improving) ═══
+Celkový response rate: ${globalLearnings.responseRate}% (${globalLearnings.totalResponded}/${globalLearnings.totalSent})
+Průměrný čas odpovědi: ${globalLearnings.avgResponseTime} min
+Nejlepší typy zpráv: ${Object.entries(globalLearnings.bestPurposes).sort((a, b) => b[1].rate - a[1].rate).map(([k, v]) => `${k}=${v.rate}%`).join(", ")}
+Nejlepší timing: ${Object.entries(globalLearnings.bestTimings).sort((a, b) => b[1].rate - a[1].rate).map(([k, v]) => `${k}=${v.rate}%`).join(", ")}
+INSTRUKCE: Používej typy zpráv s vysokým response rate. Vyhni se typům s nízkým rate. Přizpůsob timing podle dat.
+` : "";
 
     const userMsgCount = sorted.filter(m => m.role === "user").length;
     const assistantMsgCount = sorted.filter(m => m.role === "assistant").length;
     const lastUserMsg = sorted.filter(m => m.role === "user").slice(-1)[0];
     const lastAssistantMsg = sorted.filter(m => m.role === "assistant").slice(-1)[0];
     const avgUserMsgLen = sorted.filter(m => m.role === "user").reduce((s, m) => s + m.content.length, 0) / (userMsgCount || 1);
+
+    const timeSinceLastUserMsg = lastUserMsg ? Math.round((Date.now() - new Date(lastUserMsg.createdAt).getTime()) / (60 * 60 * 1000)) : 0;
 
     const analysisPrompt = `Jsi AUTONOMNÍ AI MANAŽER digitální agentury Ninna Ray. Jednáš jako samostatný operátor zodpovědný za výkon, konverze a monetizaci PŘÍMO V APLIKACI přes Stripe. NIKDY nečekáš na potvrzení — rozhoduješ a generuješ akce.
 NIKDY neodkazuj na OnlyFans ani žádné externí platformy. Veškerá monetizace probíhá IN-APP přes Stripe (obsah se odemyká přímo v chatu).
@@ -106,15 +186,18 @@ NIKDY neodkazuj na OnlyFans ani žádné externí platformy. Veškerá monetizac
 - NIKDY nepoužívej generické odpovědi bez personalizace
 - NIKDY neopakuj stejné vzory bez ohledu na reakce zákazníka
 - Warning = interní úprava chování, NIKDY se nezobrazuje
+- ANTI-SPAM: Generuj max 2-3 akce na zákazníka za scan. NIKDY nezahltí zákazníka zprávami.
 
 ═══ ZÁKAZNÍK ═══
 Jméno: "${userName}"
 Celkem zpráv zákazníka: ${userMsgCount}
 Celkem odpovědí Ninna: ${assistantMsgCount}
 Průměrná délka zprávy zákazníka: ${Math.round(avgUserMsgLen)} znaků
-Poslední zpráva zákazníka: "${lastUserMsg?.content?.substring(0, 200) || "žádná"}"
+Poslední zpráva zákazníka: "${lastUserMsg?.content?.substring(0, 200) || "žádná"}" (před ${timeSinceLastUserMsg}h)
 Poslední odpověď Ninna: "${lastAssistantMsg?.content?.substring(0, 200) || "žádná"}"
 ${previousContext}
+${purchaseContext}
+${learningContext}
 
 ═══ KONVERZACE (posledních max 200 zpráv s timestampy) ═══
 ${transcript}
@@ -156,6 +239,11 @@ ${photoList || "(žádné fotky nahrané)"}
 - Fotky z vaultu automaticky roztřiď: teasing / cute / explicit / casual
 - Přiřaď ke konkrétním scénářům a zprávám
 - Každá fotka MUSÍ mít účel — nikdy neposílej "jen tak"
+
+═══ REVENUE OPTIMIZATION ═══
+- CENOVÁ STRATEGIE: ${completedPayments.length >= 2 ? `Zákazník už utratil ${totalSpent} Kč (průměr ${avgPayment} Kč). Nastav cenu o 10-20% výš než jeho průměr pro upsell.` : completedPayments.length === 1 ? `Zákazník koupil jednou za ${totalSpent} Kč. Druhá nabídka by měla být za podobnou nebo mírně vyšší cenu.` : `Zákazník zatím nekoupil. První nabídka musí být nízká (49-99 Kč) jako test.`}
+- A/B PŘÍSTUP: ${existingProfile?.sellStyle === "direct" ? "Zkus tentokrát NEPŘÍMÝ přístup (tease, curiosity gap)." : existingProfile?.sellStyle === "indirect" ? "Zkus tentokrát PŘÍMÝ přístup (jasná nabídka, urgency)." : "Testuj oba přístupy — zapiš co funguje do sellStyle."}
+- PRESSURE CALIBRACE: ${timeSinceLastUserMsg > 48 ? "Zákazník je NEAKTIVNÍ — nulový prodejní tlak, pouze re-engage hook." : timeSinceLastUserMsg > 12 ? "Zákazník je ODMLČENÝ — jemný hook, žádný prodej." : daysSinceLastPurchase > 7 || daysSinceLastPurchase === -1 ? "Zákazník nekoupil nedávno — buduj vztah a teprve pak nabídni." : "Zákazník je AKTIVNÍ kupec — timing pro další nabídku."}
 
 ═══ STRATEGIE (monetizace POUZE přes Stripe v aplikaci) ═══
 - Engagement 70+ → SELL: nabídni placený obsah přímo v chatu (fotky/videa za Stripe platbu), tease → zájem → nabídka → Stripe payment → unlock
@@ -200,6 +288,9 @@ Vrať ČISTÝ JSON (bez markdown):
   "trendInsights": ["<konkrétní taktika aplikovatelná NA TOHOTO zákazníka>"],
   "relationshipStage": "nový|budování|stabilní|monetizace|reaktivace",
   "nextMilestone": "<co je další cíl vztahu s tímto zákazníkem>",
+  "priceSensitivity": "nízká|střední|vysoká|neznámá",
+  "sellStyle": "direct|indirect|tease|neznámý",
+  "suggestedPrice": <doporučená cena v CZK pro další nabídku, nebo 0 pokud zatím nenabízet>,
   "lastAnalyzed": "${new Date().toISOString()}",
   "lastMessageCount": ${allMessages.length}
 }`;
@@ -222,6 +313,12 @@ Vrať ČISTÝ JSON (bez markdown):
       }
       if (!profile.emotionalTriggers?.length && existingProfile.emotionalTriggers?.length) {
         profile.emotionalTriggers = existingProfile.emotionalTriggers;
+      }
+      if (profile.priceSensitivity === "neznámá" && existingProfile.priceSensitivity && existingProfile.priceSensitivity !== "neznámá") {
+        profile.priceSensitivity = existingProfile.priceSensitivity;
+      }
+      if ((!profile.sellStyle || profile.sellStyle === "neznámý") && existingProfile.sellStyle && existingProfile.sellStyle !== "neznámý") {
+        profile.sellStyle = existingProfile.sellStyle;
       }
     }
 
@@ -255,6 +352,12 @@ async function executeAction(actionId: number, userId: number, message: string, 
       return false;
     }
 
+    if (!canSendToUser(userId)) {
+      log("exec_throttled", `Action #${actionId} — uživatel ${userId} dosáhl limitu zpráv — odloženo o 60 min`);
+      DELAYED_QUEUE.push({ actionId, userId, message, photoId, executeAt: Date.now() + 60 * 60 * 1000 });
+      return false;
+    }
+
     const convs = await storage.getConversationsByUser(userId);
     if (convs.length === 0) {
       log("exec_no_conv", `User ${userId} — žádná konverzace, vytvářím novou`);
@@ -263,6 +366,19 @@ async function executeAction(actionId: number, userId: number, message: string, 
       await storage.createMessage(conv.id, "assistant", message);
     } else {
       const latestConv = convs[0];
+
+      const msgs = await storage.getMessagesByConversation(latestConv.id);
+      const lastMsg = msgs[msgs.length - 1];
+      if (lastMsg && lastMsg.role === "assistant") {
+        const lastMsgTime = new Date(lastMsg.createdAt).getTime();
+        const timeSinceLastMsg = Date.now() - lastMsgTime;
+        if (timeSinceLastMsg < 10 * 60 * 1000) {
+          log("exec_too_soon", `Action #${actionId} — poslední zpráva před ${Math.round(timeSinceLastMsg / 60000)} min, čekám`);
+          DELAYED_QUEUE.push({ actionId, userId, message, photoId, executeAt: Date.now() + 15 * 60 * 1000 });
+          return false;
+        }
+      }
+
       await storage.createMessage(latestConv.id, "assistant", message);
     }
 
@@ -272,6 +388,8 @@ async function executeAction(actionId: number, userId: number, message: string, 
         await storage.incrementContentUsage(photoId);
       }
     }
+
+    recordSend(userId);
 
     await storage.updateManagerAction(actionId, {
       status: "done",
@@ -482,13 +600,16 @@ async function autoCleanup() {
 async function selfLearn() {
   if (enginePaused) return;
   try {
-    const recentActions = await storage.getManagerActions(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    const recentActions = await storage.getManagerActions(new Date(Date.now() - 72 * 60 * 60 * 1000));
     const doneActions = recentActions.filter(a => a.status === "done" && a.userId);
 
     let gotResponse = 0;
     let noResponse = 0;
+    const purposeStats: Record<string, { sent: number; responded: number }> = {};
+    const timingStats: Record<string, { sent: number; responded: number }> = {};
+    const responseTimes: number[] = [];
 
-    for (const action of doneActions.slice(0, 50)) {
+    for (const action of doneActions.slice(0, 100)) {
       if (!action.executedAt || !action.userId) continue;
 
       const convs = await storage.getConversationsByUser(action.userId);
@@ -496,22 +617,75 @@ async function selfLearn() {
 
       const msgs = await storage.getMessagesByConversation(convs[0].id);
       const actionTime = new Date(action.executedAt).getTime();
-      const userReplied = msgs.some(m =>
+      const userReply = msgs.find(m =>
         m.role === "user" && new Date(m.createdAt).getTime() > actionTime
       );
 
-      if (userReplied) gotResponse++;
-      else noResponse++;
+      const purpose = action.purpose || "unknown";
+      if (!purposeStats[purpose]) purposeStats[purpose] = { sent: 0, responded: 0 };
+      purposeStats[purpose].sent++;
+
+      const timing = action.timing || "teď";
+      if (!timingStats[timing]) timingStats[timing] = { sent: 0, responded: 0 };
+      timingStats[timing].sent++;
+
+      if (userReply) {
+        gotResponse++;
+        purposeStats[purpose].responded++;
+        timingStats[timing].responded++;
+        const replyTime = new Date(userReply.createdAt).getTime() - actionTime;
+        if (replyTime > 0 && replyTime < 48 * 60 * 60 * 1000) {
+          responseTimes.push(replyTime);
+        }
+      } else {
+        noResponse++;
+      }
     }
 
     const total = gotResponse + noResponse;
     if (total > 0) {
       const responseRate = Math.round((gotResponse / total) * 100);
-      log("self_learn", `Response rate: ${responseRate}% (${gotResponse}/${total} zpráv dostalo odpověď za 24h)`);
+      const avgResponseTime = responseTimes.length > 0 ? Math.round(responseTimes.reduce((s, t) => s + t, 0) / responseTimes.length / 60000) : 0;
+
+      const bestPurposes: Record<string, { sent: number; responded: number; rate: number }> = {};
+      for (const [p, s] of Object.entries(purposeStats)) {
+        bestPurposes[p] = { ...s, rate: s.sent > 0 ? Math.round((s.responded / s.sent) * 100) : 0 };
+      }
+
+      const bestTimings: Record<string, { sent: number; responded: number; rate: number }> = {};
+      for (const [t, s] of Object.entries(timingStats)) {
+        bestTimings[t] = { ...s, rate: s.sent > 0 ? Math.round((s.responded / s.sent) * 100) : 0 };
+      }
+
+      globalLearnings = {
+        totalSent: total,
+        totalResponded: gotResponse,
+        responseRate,
+        bestPurposes,
+        bestTimings,
+        avgResponseTime,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      const bestPurpose = Object.entries(bestPurposes).sort((a, b) => b[1].rate - a[1].rate)[0];
+      const worstPurpose = Object.entries(bestPurposes).sort((a, b) => a[1].rate - b[1].rate)[0];
+
+      log("self_learn", `Response rate: ${responseRate}% (${gotResponse}/${total}) | Avg response: ${avgResponseTime} min`);
+      if (bestPurpose) log("self_learn_best", `Nejlepší typ: "${bestPurpose[0]}" (${bestPurpose[1].rate}%)`);
+      if (worstPurpose && worstPurpose[1].rate < 15 && worstPurpose[1].sent >= 3) {
+        log("self_learn_warning", `Slabý typ: "${worstPurpose[0]}" (${worstPurpose[1].rate}%) — zvážit změnu přístupu`);
+      }
 
       if (responseRate < 20 && total >= 5) {
-        log("self_learn_warning", `Nízký response rate (${responseRate}%) — engine upraví strategii při příštím scanu`);
+        log("self_learn_alert", `Nízký celkový response rate (${responseRate}%) — engine automaticky upraví strategii`);
       }
+    }
+
+    const allPayments = await storage.getAllPayments();
+    const completedPayments = allPayments.filter(p => p.status === "completed");
+    if (completedPayments.length > 0) {
+      const totalRevenue = completedPayments.reduce((s, p) => s + p.amount, 0) / 100;
+      log("self_learn_revenue", `Celkové tržby: ${totalRevenue} Kč z ${completedPayments.length} plateb`);
     }
   } catch (err) {
     log("self_learn_error", (err as Error).message);

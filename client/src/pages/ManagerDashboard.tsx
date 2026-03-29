@@ -43,6 +43,9 @@ type AiProfile = {
   warnings?: string[];
   relationshipStage?: string;
   nextMilestone?: string;
+  priceSensitivity?: string;
+  sellStyle?: string;
+  suggestedPrice?: number;
   lastAnalyzed: string;
 };
 
@@ -508,6 +511,17 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup, initialFilte
                       </div>
                     )}
 
+                    {(p.priceSensitivity || p.sellStyle || p.suggestedPrice) && (
+                      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1.5">💰 Revenue profil</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {p.priceSensitivity && <span className={`text-[9px] px-1.5 py-0.5 rounded ${p.priceSensitivity === "nízká" ? "bg-emerald-500/15 text-emerald-400" : p.priceSensitivity === "vysoká" ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400"}`}>💳 Cenová citlivost: {p.priceSensitivity}</span>}
+                          {p.sellStyle && p.sellStyle !== "neznámý" && <span className="text-[9px] bg-violet-500/15 text-violet-400 px-1.5 py-0.5 rounded">🎯 Styl: {p.sellStyle}</span>}
+                          {p.suggestedPrice && p.suggestedPrice > 0 && <span className="text-[9px] bg-yellow-500/15 text-yellow-400 px-1.5 py-0.5 rounded">💵 Doporučená cena: {p.suggestedPrice} Kč</span>}
+                        </div>
+                      </div>
+                    )}
+
                     {p.communicationPatterns && (
                       <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
                         <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1.5">📡 Komunikační vzory</p>
@@ -888,6 +902,16 @@ function BroadcastTab() {
 
 // ─── Main Dashboard ──────────────────────────────────────────────────────────
 
+type LearningData = {
+  totalSent: number;
+  totalResponded: number;
+  responseRate: number;
+  bestPurposes: Record<string, { sent: number; responded: number; rate: number }>;
+  bestTimings: Record<string, { sent: number; responded: number; rate: number }>;
+  avgResponseTime: number;
+  lastUpdated: string;
+};
+
 type EngineStatus = {
   isRunning: boolean;
   isPaused: boolean;
@@ -895,6 +919,16 @@ type EngineStatus = {
   nextScan: string | null;
   recentLogs: { time: string; event: string; detail: string }[];
   pendingDelayed: number;
+  autonomousFeatures?: {
+    autoCleanup: boolean;
+    selfLearning: boolean;
+    autoMessaging: boolean;
+    duplicateDetection: boolean;
+    antiSpam: boolean;
+    revenueOptimization: boolean;
+    perUserMemory: boolean;
+  };
+  learnings?: LearningData;
 };
 
 type ManagerActionRecord = {
@@ -1037,6 +1071,48 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
           </motion.div>
         )}
       </AnimatePresence>
+
+      {engineStatus?.autonomousFeatures && (
+        <div className="grid grid-cols-7 gap-1.5" data-testid="autonomous-features">
+          {Object.entries(engineStatus.autonomousFeatures).map(([key, active]) => (
+            <div key={key} className={`text-center p-1.5 rounded-lg border ${active ? "bg-emerald-500/10 border-emerald-500/20" : "bg-neutral-800/50 border-neutral-700/30"}`}>
+              <div className={`w-1.5 h-1.5 rounded-full mx-auto mb-0.5 ${active ? "bg-emerald-400" : "bg-neutral-600"}`} />
+              <p className={`text-[8px] ${active ? "text-emerald-400" : "text-neutral-600"}`}>
+                {key === "autoCleanup" ? "Cleanup" : key === "selfLearning" ? "Learning" : key === "autoMessaging" ? "Zprávy" : key === "duplicateDetection" ? "Duplikáty" : key === "antiSpam" ? "Anti-spam" : key === "revenueOptimization" ? "Revenue" : key === "perUserMemory" ? "Paměť" : key}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {engineStatus?.learnings && engineStatus.learnings.totalSent > 0 && (
+        <div className="bg-violet-500/5 border border-violet-500/20 rounded-xl p-3 space-y-2" data-testid="learning-insights">
+          <p className="text-[11px] font-bold text-violet-300">🧠 Self-Learning Insights</p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="text-center">
+              <p className={`text-sm font-bold ${engineStatus.learnings.responseRate >= 40 ? "text-emerald-400" : engineStatus.learnings.responseRate >= 20 ? "text-amber-400" : "text-red-400"}`}>{engineStatus.learnings.responseRate}%</p>
+              <p className="text-[9px] text-neutral-500">Response rate</p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-bold text-violet-400">{engineStatus.learnings.avgResponseTime}m</p>
+              <p className="text-[9px] text-neutral-500">Avg odpověď</p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-bold text-blue-400">{engineStatus.learnings.totalSent}</p>
+              <p className="text-[9px] text-neutral-500">Odesláno</p>
+            </div>
+          </div>
+          {Object.keys(engineStatus.learnings.bestPurposes).length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {Object.entries(engineStatus.learnings.bestPurposes).sort((a, b) => b[1].rate - a[1].rate).map(([purpose, data]) => (
+                <span key={purpose} className={`text-[9px] px-2 py-0.5 rounded-full border ${data.rate >= 40 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : data.rate >= 20 ? "bg-amber-500/10 border-amber-500/20 text-amber-400" : "bg-red-500/10 border-red-500/20 text-red-400"}`}>
+                  {purpose}: {data.rate}% ({data.responded}/{data.sent})
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-4 gap-2">
         {([

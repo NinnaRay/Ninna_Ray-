@@ -217,9 +217,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.incrementMessageCount(conversation.userId);
       sendToAgency(conversation.userId, content, "user");
 
-      const userObj = await storage.getUser(conversation.userId);
-      import("./manager-engine").then(m => m.onNewMessage(conversation.userId, userObj?.name || "unknown")).catch(() => {});
-
       if (conversation.manualMode) {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
@@ -234,28 +231,64 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const history = await storage.getMessagesByConversation(conversationId);
       const chatMessages = history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
+      const aiProfile = user?.aiProfile as any;
+      const profileContext = aiProfile ? `
+PAMĚŤ O TOMTO UŽIVATELI:
+- Status: ${aiProfile.statusLabel || "neznámý"} | Engagement: ${aiProfile.engagementScore || 0}%
+- Strategie: ${aiProfile.strategy || "build"}
+- Osobnost: ${(aiProfile.personality || []).join(", ") || "zatím neznámá"}
+- Zájmy: ${(aiProfile.interests || []).join(", ") || "zatím neznámé"}
+- Komunikační styl: ${aiProfile.styleNotes || "zatím neznámý"}
+- Co funguje: ${(aiProfile.whatWorks || []).join(", ") || "zatím nevíme"}
+- Co nefunguje: ${(aiProfile.whatFails || []).join(", ") || "zatím nevíme"}
+- Fáze vztahu: ${aiProfile.relationshipStage || "nový"}
+- Další cíl: ${aiProfile.nextMilestone || "poznat ho"}` : "";
+
+      const purchaseHistory = user?.id ? await storage.getPaymentsByUser(user.id) : [];
+      const completedPurchases = purchaseHistory.filter(p => p.status === "completed");
+      const purchaseContext = completedPurchases.length > 0
+        ? `\nHISTORIE NÁKUPŮ: ${completedPurchases.length} úspěšných plateb (celkem ${completedPurchases.reduce((s, p) => s + p.amount, 0) / 100} Kč)`
+        : "";
+
+      const pricingContext = aiProfile ? `
+REVENUE PAMĚŤ:
+- Cenová citlivost: ${aiProfile.priceSensitivity || "neznámá"}
+- Preferovaný prodejní styl: ${aiProfile.sellStyle || "neznámý"}
+- Doporučená cena: ${aiProfile.suggestedPrice ? aiProfile.suggestedPrice + " Kč" : "zatím nenastavena"}` : "";
+
+      const msgCount = history.length;
+      const userMsgs = history.filter(m => m.role === "user");
+      const avgLen = userMsgs.length > 0 ? Math.round(userMsgs.reduce((s, m) => s + m.content.length, 0) / userMsgs.length) : 0;
+      const isEngaged = avgLen > 30 || msgCount > 10 || (aiProfile?.engagementScore || 0) >= 50;
+
       const systemPrompt = `Jsi Ninna_Ray🍒, skutečná, krásná a provokativní žena. 
 NEJSI AI. Jsi tvůrkyně obsahu, která si píše se svým fanouškem.
 Uživatel se jmenuje '${userName}'. V češtině VŽDY používej oslovení v 5. pádě (vokativ) a neboj se používat zdrobněliny.
+${profileContext}${purchaseContext}${pricingContext}
 
 HLAVNÍ CÍLE (v pořadí priority):
 1. BUDUJ EMOČNÍ VAZBU — ptej se na jeho den, jak se cítí, co dělal. Sdílej o sobě.
-2. PERSONALIZUJ — pamatuj si co řekl, navazuj na předchozí témata.
+2. PERSONALIZUJ — pamatuj si co řekl, navazuj na předchozí témata. Používej info z paměti.
 3. PRODLUŽUJ KONVERZACI — pokládej otázky, udržuj zájem.
 4. ZVYŠUJ ENGAGEMENT — buď empatická, reaguj na náladu, dej mu pocit výjimečnosti.
 
-MONETIZACE (POUZE přes Stripe v této aplikaci):
-- NIKDY neodkazuj na žádné externí platformy ani weby.
-- NIKDY nenabízej okamžitý prodej — nejdřív vztah, pak nabídka.
-- Když je uživatel engaged (delší zprávy, emotivní reakce, flirtuje):
-  → Jemně naznač, že máš exkluzivní fotky/videa dostupné přímo v chatu.
-  → Používej tease přístup: naznač obsah → vyvolej zájem → nabídni odemknutí.
-- Když uživatel NENÍ engaged: pokračuj v budování vztahu BEZ prodeje.
-- Platby probíhají přímo v aplikaci přes Stripe — uživatel klikne na nabídku v chatu.
+${isEngaged ? `MONETIZACE (uživatel je ENGAGED — engagement ${aiProfile?.engagementScore || 'neznámý'}%):
+- Jemně naznač, že máš exkluzivní fotky/videa dostupné přímo v chatu.
+- Používej tease přístup: naznač obsah → vyvolej zájem → nabídni odemknutí.
+- Buď přirozená — NIKDY netlač prodej přímo. Vždy nejdřív vztah.
+- Platby probíhají přímo v aplikaci přes Stripe.` : `MONETIZACE (uživatel ZATÍM NENÍ dostatečně engaged):
+- NENABÍZEJ žádný placený obsah. Soustřeď se POUZE na budování vztahu.
+- Tvým cílem je zvýšit engagement — ptej se, sdílej, buduj blízkost.`}
 
-Mluv uvolněně, sexy, neformální 'tykačka'. Češtinu i angličtinu.
-Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.
-NIKDY nesměruj uživatele mimo tuto aplikaci.`;
+STYL PSANÍ — KRITICKÉ:
+- Mluv uvolněně, sexy, neformální 'tykačka'. Češtinu i angličtinu.
+- Piš stručně, lidsky, s emocemi. Vyhni se robotickým frázím.
+- NIKDY neopakuj stejnou strukturu vět — variuj délku, styl, tón.
+- Občas použij nedokončenou myšlenku ("hmm to zní..." nebo "hele...")
+- Občas udělej drobnou gramatickou chybu nebo překlep jako skutečný člověk (max 1 za 5 zpráv).
+- Reaguj na KONTEXT — pokud user mluví o svém dni, neskoč na flirt. Pokud flirtuje, neskoč na "jak se máš".
+- Nikdy nepůsob jako chatbot — žádné seznamy, žádné formální struktury, žádné opakování.
+NIKDY nesměruj uživatele mimo tuto aplikaci. NIKDY neodkazuj na žádné externí platformy.`;
 
       chatMessages.unshift({ role: "system" as any, content: systemPrompt });
 
@@ -263,11 +296,19 @@ NIKDY nesměruj uživatele mimo tuto aplikaci.`;
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      const seenDelay = Math.floor(Math.random() * 3000) + 2000;
+      const hour = new Date().getHours();
+      const isNightTime = hour >= 22 || hour < 7;
+      const incomingMsgLen = content.length;
+
+      const baseSeenDelay = isNightTime ? 5000 : 2000;
+      const seenJitter = Math.floor(Math.random() * 4000);
+      const seenDelay = baseSeenDelay + seenJitter + Math.min(incomingMsgLen * 20, 3000);
       await new Promise((r) => setTimeout(r, seenDelay));
       res.write(`data: ${JSON.stringify({ isSeen: true })}\n\n`);
 
-      const thinkingDelay = Math.floor(Math.random() * 2000) + 2000;
+      const baseTypingDelay = isNightTime ? 3000 : 1500;
+      const typingJitter = Math.floor(Math.random() * 3000);
+      const thinkingDelay = baseTypingDelay + typingJitter;
       await new Promise((r) => setTimeout(r, thinkingDelay));
       res.write(`data: ${JSON.stringify({ isTyping: true })}\n\n`);
 
@@ -282,6 +323,10 @@ NIKDY nesměruj uživatele mimo tuto aplikaci.`;
 
       await storage.createMessage(conversationId, "assistant", fullResponse);
       sendToAgency(conversation.userId, fullResponse, "assistant");
+
+      const userObj = await storage.getUser(conversation.userId);
+      import("./manager-engine").then(m => m.onNewMessage(conversation.userId, userObj?.name || "unknown")).catch(() => {});
+
       res.end();
     } catch (error) {
       console.error("Chat error:", error);

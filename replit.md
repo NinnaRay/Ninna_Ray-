@@ -37,11 +37,37 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - **Tables**: `users` (with `aiProfile` jsonb, `aiProfileUpdatedAt`), `conversations` (with `manualMode`, `assignedAgent`), `messages`, `content_items` (vault), `manager_actions` (action queue), `manager_log` (engine activity log)
 - **Migrations**: `npx drizzle-kit push`
 
-### AI Manager System — Fully Autonomous Self-Managing Engine
+### AI Manager System — Fully Autonomous Self-Running Monetization Engine
 - **Fully autonomous** — runs on 10-minute interval, analyzes ALL users, generates actions AND EXECUTES THEM automatically
 - **Self-managing**: Engine cleans up after itself — detects test accounts, duplicate users, and removes them automatically
-- **Self-learning**: Tracks response rates (which messages got replies), adjusts strategy when response rate drops
-- **Auto-cleanup**: Runs on resume + every 60 min — deletes test accounts (TestUser, TestPayer, etc.) and empty duplicates
+- **7 autonomous features**: autoCleanup, selfLearning, autoMessaging, duplicateDetection, antiSpam, revenueOptimization, perUserMemory
+- **Self-learning** (enhanced):
+  - Tracks response rates per purpose type (build/sell/hook) and timing
+  - Identifies best-performing message types and worst-performing approaches
+  - Computes average response time per user
+  - Feeds learning data into analysis prompt so AI adapts strategies based on real data
+  - 72h analysis window for statistical significance
+- **Anti-spam protection**:
+  - Max 3 messages per hour per user, max 8 per day
+  - Rate-limited actions are deferred (rescheduled +60min), not dropped
+  - Double-send prevention: if last message was assistant and < 10 min ago, defers to +15 min
+  - `onNewMessage()` triggers AFTER assistant reply is saved (prevents race condition duplicates)
+- **Revenue optimization loop**:
+  - Per-user purchase history injected into analysis (total spent, avg payment, last purchase, price range)
+  - Dynamic pricing: AI suggests prices based on spending patterns (low first purchase → upsell gradually)
+  - A/B sell style testing: alternates between direct/indirect/tease approaches per user
+  - Pressure calibration: auto-reduces sell pressure for inactive/unresponsive users
+  - New profile fields: `priceSensitivity`, `sellStyle`, `suggestedPrice`
+- **Per-user memory** (enhanced):
+  - All profile fields preserved across analyses (whatWorks, whatFails, emotionalTriggers, priceSensitivity, sellStyle)
+  - Purchase history and pricing context available in both manager analysis AND real-time chat prompt
+  - Revenue memory fields (priceSensitivity, sellStyle, suggestedPrice) injected into chat system prompt
+- **Human-like chat behavior** (enhanced):
+  - Variable delays based on message length and time of day (night = slower responses)
+  - Engagement-aware monetization: only offers content to engaged users (>30 char avg, >10 msgs, or engagement >= 50%)
+  - Prompt instructs occasional typos, incomplete thoughts, varied sentence structure
+  - Context-aware responses (no flirt when user talks about their day, no small talk when user flirts)
+- **Auto-cleanup**: Runs on resume + every 60 min — deletes test accounts and empty duplicates
   - Groups by `normalizeName()` — if "Žerik" has 5 duplicates with 0 messages, deletes them, keeps the one with messages
 - **Auto-execution**: Engine sends messages directly to customer conversations — no manual intervention needed
   - `timing: "teď"` → sent immediately after analysis
@@ -51,7 +77,7 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - **On resume sequence**: autoCleanup(1s) → backlog(3s) → selfLearn(4s) → fullScan(6s)
 - **Backlog sweep**: On engine start, processes all pending actions from previous runs
 - **Engine file**: `server/manager-engine.ts` — starts on server boot, runs `runFullScan()` every 10 min
-- **Auto-reanalyze**: After each chat message, triggers re-analysis if profile > 5 min old
+- **Auto-reanalyze**: After each chat message (AFTER assistant response saved), triggers re-analysis if profile > 5 min old
 - **Delete user API**: `DELETE /api/manager/users/:userId` — cascade deletes conversations, messages, actions
 - **Adaptive personalization** — builds persistent individual profiles per customer:
   - `communicationPatterns`: msg length, response speed, emoji usage, tone, peak hours
@@ -59,14 +85,20 @@ Preferred communication style: Simple, everyday language. Czech language UI.
   - `whatWorks` / `whatFails`: learned from interaction history, preserved across analyses
   - `relationshipStage`: nový/budování/stabilní/monetizace/reaktivace
   - `nextMilestone`: what's the next goal for this relationship
+  - `priceSensitivity`: nízká/střední/vysoká — how price-sensitive the user is
+  - `sellStyle`: direct/indirect/tease — which approach works best
+  - `suggestedPrice`: AI-recommended price in CZK for next content offer
 - **Previous profile as memory**: Each analysis receives the previous profile so AI builds on it, not from scratch
 - **Strictly actionable output**: Every analytical block (personality, interests, warnings) must convert to concrete messages with timing, purpose, and photo assignments
 - **No generic responses**: AI must personalize based on conversation history, style, and emotional triggers
 - **Action queue persisted**: Actions stored in `manager_actions` DB table with status tracking (pending/done/dismissed/failed)
 - **Auto-sent marker**: Actions executed by engine have `result: "auto-sent"` in DB
 - Strategy logic: high engagement → SELL, medium → BUILD, low → HOOK
-- **Owner Dashboard**:
+- **Owner Dashboard** (enhanced):
   - Engine status with ⏸ Pause / ▶ Resume button
+  - 7 autonomous feature indicators (green = active, grey = paused)
+  - Self-Learning Insights panel: response rate, avg response time, messages sent, per-purpose performance badges
+  - Revenue profil per customer: cenová citlivost, prodejní styl, doporučená cena
   - Auto-sent message log with photos, badges, timestamps
   - Pending actions (if engine was paused) with manual "Odesláno" / "Zahodit" buttons
   - Vault photo thumbnails inline in action cards
