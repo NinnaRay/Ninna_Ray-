@@ -3,7 +3,8 @@ import { useChat } from "@/hooks/use-chat";
 import { ChatBubble } from "@/components/ChatBubble";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, LogOut, ChevronLeft, Crown } from "lucide-react";
+import { Send, LogOut, ChevronLeft, Crown, Mic, Loader2 } from "lucide-react";
+import { useVoice } from "@/hooks/use-voice";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -15,6 +16,12 @@ export default function Chat() {
   const { messages, sendMessage, isTyping, initConversation, activeConversationId } = useChat({ userId: user?.id });
   const [inputValue, setInputValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const { isRecording, isTranscribing, startRecording, stopRecording } = useVoice({
+    onTranscription: (text) => {
+      sendMessage(text);
+    },
+  });
 
   useEffect(() => {
     const savedUser = localStorage.getItem("ninna_user");
@@ -118,25 +125,58 @@ export default function Chat() {
 
       <footer className="p-4 bg-black/60 backdrop-blur-xl border-t border-white/5 z-20">
         <form onSubmit={handleSend} className="flex items-center gap-2">
+           <Button
+             type="button"
+             size="icon"
+             data-testid="button-voice-record"
+             disabled={isTranscribing}
+             onPointerDown={(e) => {
+               e.preventDefault();
+               if (!isRecording && !isTranscribing) startRecording();
+             }}
+             onPointerUp={(e) => {
+               e.preventDefault();
+               if (isRecording) stopRecording();
+             }}
+             onPointerLeave={() => {
+               if (isRecording) stopRecording();
+             }}
+             className={`flex-shrink-0 rounded-xl transition-all ${
+               isRecording
+                 ? "bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30"
+                 : isTranscribing
+                   ? "bg-white/10 text-neutral-400"
+                   : "bg-white/5 text-neutral-400 border border-white/10"
+             }`}
+           >
+             {isTranscribing ? (
+               <Loader2 className="w-5 h-5 animate-spin" />
+             ) : (
+               <Mic className="w-5 h-5" />
+             )}
+           </Button>
            <div className="flex-1 relative">
              <Input
                value={inputValue}
                onChange={(e) => setInputValue(e.target.value)}
-               placeholder="Write something sexy..."
+               placeholder={isRecording ? "Recording..." : isTranscribing ? "Transcribing..." : "Write something sexy..."}
+               disabled={isRecording || isTranscribing}
                className="h-12 rounded-2xl bg-white/5 border-white/10 text-white focus:border-pink-500/50 focus:ring-pink-500/20 px-4 transition-all"
+               data-testid="input-chat-message"
              />
              <Button 
                type="submit" 
                size="icon"
                disabled={!inputValue.trim()}
-               className="absolute right-1 top-1 h-10 w-10 rounded-xl bg-pink-600 text-white hover:bg-pink-500 disabled:opacity-30 transition-all shadow-lg shadow-pink-600/20"
+               data-testid="button-send-message"
+               className="absolute right-1 top-1 h-10 w-10 rounded-xl bg-pink-600 text-white disabled:opacity-30 transition-all shadow-lg shadow-pink-600/20"
              >
                <Send className="w-4 h-4" />
              </Button>
            </div>
         </form>
         <p className="text-[10px] text-neutral-600 text-center mt-3 uppercase tracking-widest font-bold">
-          Message count tracked for loyalty rewards
+          {isRecording ? "Hold to record, release to send" : "Message count tracked for loyalty rewards"}
         </p>
       </footer>
     </div>

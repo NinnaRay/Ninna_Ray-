@@ -61,6 +61,7 @@ type ManagerUser = {
   aiProfile: AiProfile | null;
   aiProfileUpdatedAt: string | null;
   stripeCustomerId?: string | null;
+  platform?: string;
 };
 
 type ContentItem = {
@@ -2291,9 +2292,272 @@ function MarketTab() {
   );
 }
 
+function safeFetchJson(url: string) {
+  return fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+}
+
+function RevenueTab() {
+  const { data: rev, isError } = useQuery<any>({ queryKey: ["/api/manager/analytics/revenue"], queryFn: () => safeFetchJson("/api/manager/analytics/revenue") });
+
+  if (isError) return <div className="flex-1 flex items-center justify-center text-red-400">Chyba při načítání revenue dat</div>;
+  if (!rev) return <div className="flex-1 flex items-center justify-center text-neutral-500">Načítám revenue metriky...</div>;
+
+  const kpiCards = [
+    { label: "MRR", value: `${rev.mrr} Kč`, color: "text-emerald-400" },
+    { label: "ARPU", value: `${rev.arpu} Kč`, color: "text-blue-400" },
+    { label: "Churn Rate", value: `${rev.churnRate}%`, color: rev.churnRate > 5 ? "text-red-400" : "text-emerald-400" },
+    { label: "NRR", value: `${rev.nrr}%`, color: rev.nrr >= 100 ? "text-emerald-400" : "text-amber-400" },
+    { label: "Platících", value: `${rev.payingCustomers}/${rev.totalCustomers}`, color: "text-violet-400" },
+    { label: "Konverze", value: `${rev.conversionRate}%`, color: "text-pink-400" },
+    { label: "Expanze", value: `${rev.expansionRevenue} Kč`, color: "text-cyan-400" },
+    { label: "MRR růst", value: `${rev.mrrGrowthRate > 0 ? "+" : ""}${rev.mrrGrowthRate}%`, color: rev.mrrGrowthRate >= 0 ? "text-emerald-400" : "text-red-400" },
+  ];
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4" data-testid="tab-revenue-content">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {kpiCards.map(k => (
+          <div key={k.label} className="bg-neutral-900 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] text-neutral-500 font-bold uppercase">{k.label}</div>
+            <div className={`text-xl font-bold ${k.color}`}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <h3 className="text-sm font-bold mb-3">MRR Waterfall</h3>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={rev.mrrWaterfall}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="label" tick={{ fill: "#999", fontSize: 10 }} />
+            <YAxis tick={{ fill: "#999", fontSize: 10 }} />
+            <Tooltip contentStyle={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 8 }} />
+            <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+          <h3 className="text-sm font-bold mb-3">Revenue podle platformy</h3>
+          {rev.revenueByPlatform?.length > 0 ? rev.revenueByPlatform.map((p: any) => (
+            <div key={p.platform} className="flex items-center justify-between py-1.5 border-b border-neutral-800 last:border-0">
+              <span className="text-xs font-bold capitalize">{p.platform}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-neutral-400">{p.customers} zákazníků</span>
+                <span className="text-xs text-emerald-400 font-bold">{p.revenue} Kč</span>
+              </div>
+            </div>
+          )) : <div className="text-neutral-500 text-xs">Zatím žádná data</div>}
+        </div>
+
+        <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+          <h3 className="text-sm font-bold mb-3">Churn kohorty (6 měsíců)</h3>
+          {rev.churnCohorts?.map((c: any) => (
+            <div key={c.month} className="flex items-center gap-2 py-1.5">
+              <span className="text-[10px] text-neutral-400 w-14">{c.month}</span>
+              <div className="flex-1 bg-neutral-800 rounded-full h-3 overflow-hidden">
+                <div className="h-full bg-emerald-500/60 rounded-full transition-all" style={{ width: `${c.retentionRate}%` }} />
+              </div>
+              <span className="text-[10px] font-bold text-emerald-400 w-10 text-right">{c.retentionRate}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EngagementTab() {
+  const { data: scores, isError } = useQuery<any[]>({ queryKey: ["/api/manager/analytics/engagement-scores"], queryFn: () => safeFetchJson("/api/manager/analytics/engagement-scores") });
+
+  if (isError) return <div className="flex-1 flex items-center justify-center text-red-400">Chyba při načítání engagement dat</div>;
+  if (!scores) return <div className="flex-1 flex items-center justify-center text-neutral-500">Načítám engagement skóre...</div>;
+
+  const tierColors: Record<string, string> = { monetized: "bg-emerald-500/20 text-emerald-400", hot: "bg-red-500/20 text-red-400", warm: "bg-amber-500/20 text-amber-400", cold: "bg-blue-500/20 text-blue-400" };
+  const tierCounts = scores.reduce((acc, s) => { acc[s.tier] = (acc[s.tier] || 0) + 1; return acc; }, {} as Record<string, number>);
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4" data-testid="tab-engagement-content">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {Object.entries(tierCounts).map(([tier, count]) => (
+          <div key={tier} className="bg-neutral-900 border border-neutral-800 rounded-lg p-3">
+            <div className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded inline-block ${tierColors[tier] || "bg-neutral-700 text-neutral-400"}`}>{tier}</div>
+            <div className="text-2xl font-bold mt-1">{count as number}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <h3 className="text-sm font-bold mb-1">Engagement distribuce</h3>
+        <p className="text-[10px] text-neutral-500 mb-3">Skóre = (2×zprávy) + (5×nákupy) − (3×dny neaktivity) × 0.9^týdny</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={scores.slice(0, 20)}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="name" tick={{ fill: "#999", fontSize: 9 }} angle={-45} textAnchor="end" height={60} />
+            <YAxis tick={{ fill: "#999", fontSize: 10 }} domain={[0, 100]} />
+            <Tooltip contentStyle={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 8 }} />
+            <Bar dataKey="score" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-neutral-800/50">
+              <th className="text-left px-3 py-2 text-neutral-400 font-bold">Jméno</th>
+              <th className="text-center px-3 py-2 text-neutral-400 font-bold">Skóre</th>
+              <th className="text-center px-3 py-2 text-neutral-400 font-bold">Tier</th>
+              <th className="text-center px-3 py-2 text-neutral-400 font-bold">Zprávy</th>
+              <th className="text-center px-3 py-2 text-neutral-400 font-bold">Nákupy</th>
+              <th className="text-center px-3 py-2 text-neutral-400 font-bold">Neaktivita</th>
+              <th className="text-center px-3 py-2 text-neutral-400 font-bold">Decay</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scores.map((s: any) => (
+              <tr key={s.userId} className="border-t border-neutral-800/50 hover:bg-neutral-800/30">
+                <td className="px-3 py-2 font-bold">{s.name}</td>
+                <td className="px-3 py-2 text-center">
+                  <span className={`font-bold ${s.score >= 80 ? "text-emerald-400" : s.score >= 50 ? "text-amber-400" : s.score >= 25 ? "text-blue-400" : "text-neutral-500"}`}>{s.score}</span>
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${tierColors[s.tier] || "bg-neutral-700 text-neutral-400"}`}>{s.tier}</span>
+                </td>
+                <td className="px-3 py-2 text-center text-neutral-400">{s.messageCount}</td>
+                <td className="px-3 py-2 text-center text-neutral-400">{s.purchaseCount}</td>
+                <td className="px-3 py-2 text-center text-neutral-400">{s.daysSinceLastActivity}d</td>
+                <td className="px-3 py-2 text-center">{s.decayApplied ? <span className="text-amber-400">✓</span> : <span className="text-neutral-600">—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function WeeklyReportTab() {
+  const { data: report, isError } = useQuery<any>({ queryKey: ["/api/manager/analytics/weekly-report"], queryFn: () => safeFetchJson("/api/manager/analytics/weekly-report") });
+  const { data: alertsData } = useQuery<any[]>({ queryKey: ["/api/manager/alerts"], queryFn: () => safeFetchJson("/api/manager/alerts"), refetchInterval: 30000 });
+  const qc = useQueryClient();
+
+  const dismissMut = useMutation({
+    mutationFn: (id: string) => fetch(`/api/manager/alerts/${id}/dismiss`, { method: "POST" }).then(r => r.json()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/manager/alerts"] }),
+  });
+
+  if (isError) return <div className="flex-1 flex items-center justify-center text-red-400">Chyba při generování reportu</div>;
+  if (!report) return <div className="flex-1 flex items-center justify-center text-neutral-500">Generuji týdenní report...</div>;
+
+  const severityColors: Record<string, string> = { critical: "bg-red-500/20 text-red-400 border-red-500/30", warning: "bg-amber-500/20 text-amber-400 border-amber-500/30", info: "bg-blue-500/20 text-blue-400 border-blue-500/30" };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4" data-testid="tab-weekly-content">
+      {alertsData && alertsData.length > 0 && (
+        <div className="space-y-1.5">
+          <h3 className="text-sm font-bold flex items-center gap-2">🔔 Upozornění <span className="text-[10px] text-amber-400 font-normal">{alertsData.length} aktivních</span></h3>
+          {alertsData.slice(0, 5).map((a: any) => (
+            <div key={a.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${severityColors[a.severity] || "bg-neutral-800 border-neutral-700"}`}>
+              <span className="text-xs flex-1">{a.message}</span>
+              <span className="text-[8px] text-neutral-500">{new Date(a.timestamp).toLocaleTimeString("cs-CZ")}</span>
+              <button onClick={() => dismissMut.mutate(a.id)} className="text-[10px] text-neutral-500 hover:text-white" data-testid={`dismiss-alert-${a.id}`}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {[
+          { l: "MRR", v: `${report.kpis.mrr} Kč`, c: "text-emerald-400" },
+          { l: "ARPU", v: `${report.kpis.arpu} Kč`, c: "text-blue-400" },
+          { l: "Churn", v: `${report.kpis.churnRate}%`, c: report.kpis.churnRate > 5 ? "text-red-400" : "text-emerald-400" },
+          { l: "NRR", v: `${report.kpis.nrr}%`, c: report.kpis.nrr >= 100 ? "text-emerald-400" : "text-amber-400" },
+          { l: "Engagement", v: `${report.kpis.avgEngagement}%`, c: "text-violet-400" },
+        ].map(k => (
+          <div key={k.l} className="bg-neutral-900 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] text-neutral-500 font-bold">{k.l}</div>
+            <div className={`text-lg font-bold ${k.c}`}>{k.v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <h3 className="text-sm font-bold mb-3">Týden vs. týden</h3>
+        {report.weekOverWeek?.map((w: any) => (
+          <div key={w.metric} className="flex items-center justify-between py-1.5 border-b border-neutral-800/50 last:border-0">
+            <span className="text-xs text-neutral-400">{w.metric}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-neutral-500">{w.lastWeek}</span>
+              <span className="text-xs">→</span>
+              <span className="text-xs font-bold">{w.thisWeek}</span>
+              <span className={`text-[10px] font-bold ${w.change >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {w.change > 0 ? "+" : ""}{w.change}%
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+          <h3 className="text-sm font-bold mb-2">Top zákazníci</h3>
+          {report.topPerformers?.map((p: any, i: number) => (
+            <div key={i} className="flex items-center justify-between py-1.5 border-b border-neutral-800/50 last:border-0">
+              <span className="text-xs font-bold">{p.name}</span>
+              <div className="flex gap-3">
+                <span className="text-[10px] text-neutral-400">Eng: {p.engagement}%</span>
+                <span className="text-xs text-emerald-400 font-bold">{p.spent} Kč</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+          <h3 className="text-sm font-bold mb-2">Benchmarky vs. industrie</h3>
+          {report.competitiveBenchmarks?.map((b: any, i: number) => (
+            <div key={i} className="flex items-center justify-between py-1.5 border-b border-neutral-800/50 last:border-0">
+              <span className="text-xs text-neutral-400">{b.metric}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold">{b.ours}</span>
+                <span className="text-[10px] text-neutral-500">vs {b.industry}</span>
+                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${b.verdict === "OK" || b.verdict === "Výborný" ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>{b.verdict}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <h3 className="text-sm font-bold mb-2">Strategické doporučení</h3>
+        <div className="space-y-1.5">
+          {report.strategicRecommendations?.map((r: string, i: number) => (
+            <div key={i} className="flex items-start gap-2 text-xs">
+              <span className="text-amber-400 shrink-0 mt-0.5">→</span>
+              <span className="text-neutral-300">{r}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center gap-4 py-3">
+        <span className="text-[8px] text-neutral-600">
+          Report vygenerován: {new Date(report.generatedAt).toLocaleString("cs-CZ")}
+        </span>
+        <a href="/api/manager/analytics/weekly-report/export" download
+          className="text-[10px] bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg transition-colors font-bold"
+          data-testid="export-report-btn">
+          Exportovat report (.txt)
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export default function ManagerDashboard() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast" | "payments" | "market" | "analytics" | "report">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "vault" | "trends" | "broadcast" | "payments" | "market" | "analytics" | "report" | "revenue" | "engagement" | "weekly">("overview");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [initialFilter, setInitialFilter] = useState<string | undefined>(undefined);
   const qc = useQueryClient();
@@ -2322,6 +2586,9 @@ export default function ManagerDashboard() {
     { id: "broadcast" as const, icon: "📢", label: "Broadcast" },
     { id: "payments" as const, icon: "💳", label: "Platby" },
     { id: "analytics" as const, icon: "📉", label: "Analytika" },
+    { id: "revenue" as const, icon: "💰", label: "Revenue" },
+    { id: "engagement" as const, icon: "🎯", label: "Scoring" },
+    { id: "weekly" as const, icon: "📊", label: "Týdenní" },
     { id: "report" as const, icon: "📋", label: "Report" },
     { id: "market" as const, icon: "📈", label: "Trh" },
   ];
@@ -2332,8 +2599,8 @@ export default function ManagerDashboard() {
         <div className="flex items-center gap-3">
           <span className="text-xl">🧠</span>
           <div>
-            <h1 className="font-bold text-sm leading-none" data-testid="text-dashboard-title">AI Manager</h1>
-            <p className="text-neutral-500 text-[10px]">{users.length} zákazníků · autonomní režim</p>
+            <h1 className="font-bold text-sm leading-none" data-testid="text-dashboard-title">Ninna Ray Manager</h1>
+            <p className="text-neutral-500 text-[10px]">{users.length} zákazníků</p>
           </div>
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Engine aktivní" />
         </div>
@@ -2361,6 +2628,9 @@ export default function ManagerDashboard() {
         {activeTab === "broadcast" && <BroadcastTab />}
         {activeTab === "payments" && <PaymentsTab users={users} />}
         {activeTab === "analytics" && <AnalyticsTab />}
+        {activeTab === "revenue" && <RevenueTab />}
+        {activeTab === "engagement" && <EngagementTab />}
+        {activeTab === "weekly" && <WeeklyReportTab />}
         {activeTab === "report" && <ReportTab />}
         {activeTab === "market" && <MarketTab />}
       </div>

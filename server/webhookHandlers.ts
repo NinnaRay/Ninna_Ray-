@@ -39,6 +39,22 @@ export class WebhookHandlers {
             await storage.updatePaymentStatus(payment.id, 'completed', paymentIntentId);
             await storage.addManagerLog('payment_success', `Platba #${payment.id} úspěšně dokončena, session: ${sessionId}`);
             console.log(`[Webhook] Payment #${payment.id} completed successfully`);
+
+            if (payment.userId) {
+              const convs = await storage.getConversationsByUser(payment.userId);
+              if (convs.length > 0) {
+                const amountCzk = Math.round(payment.amount / 100);
+                let confirmMsg = `✅ Platba ${amountCzk} Kč přijata! Děkuji, miláčku 💋`;
+                if (payment.contentItemId) {
+                  const item = await storage.getContentItem(payment.contentItemId);
+                  if (item) {
+                    const isVideo = item.mimeType?.startsWith("video");
+                    confirmMsg = `✅ Platba ${amountCzk} Kč přijata! Tady máš svůj exkluzivní ${isVideo ? "video" : "obsah"} 💋🔓\n\n[UNLOCKED_CONTENT:${payment.contentItemId}]`;
+                  }
+                }
+                await storage.createMessage(convs[0].id, "assistant", confirmMsg);
+              }
+            }
           }
         } catch (err: any) {
           console.error('[Webhook] checkout.session.completed error:', err.message);

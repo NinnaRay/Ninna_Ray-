@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import OpenAI from "openai";
 import { getMarketContext, getPricingForUser, getMarketIntelligence } from "./market-intelligence";
+import { computeEngagementScore, classifyByScore, type EngagementScoreResult } from "./analytics-engine";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -81,7 +82,11 @@ export function getManagerStatus() {
       antiSpam: !enginePaused,
       revenueOptimization: !enginePaused,
       perUserMemory: !enginePaused,
+      behavioralScoring: !enginePaused,
+      scoreDecay: !enginePaused,
     },
+    scoringFormula: "CES = (2×messages) + (4×content_views) + (5×purchases) - (3×days_inactive) × 0.9^weeks_inactive",
+    scoreThresholds: { cold: "<25", warm: "25-49", hot: "50-79", monetized: "80+" },
     learnings: globalLearnings,
   };
 }
@@ -296,11 +301,12 @@ Vrať ČISTÝ JSON (bez markdown):
   "mainDriver": "<1 věta: CO PŘESNĚ teď udělat a PROČ — řídí celou konverzaci>",
   "actionQueue": [
     {
-      "message": "<hotová zpráva — personalizovaná, navazující na konverzaci, reflektující styl zákazníka>",
+      "message": "<hotová zpráva — personalizovaná, navazující na konverzaci, reflektující styl zákazníka. NIKDY nepřidávej platební link do zprávy — systém ho vygeneruje automaticky.>",
       "timing": "<kdy: 'teď' / 'za 1h' / 'za 3h' / 'dnes večer' / 'zítra ráno'>",
       "purpose": "build|sell|hook",
-      "photoId": <ID fotky nebo null>,
-      "photoNote": "<proč tuto fotku — jaký scénář, jaký efekt>"
+      "photoId": <ID fotky nebo null — pokud purpose=sell, VŽDY vyber konkrétní fotku z dostupných>,
+      "photoNote": "<proč tuto fotku — jaký scénář, jaký efekt>",
+      "price": <cena v CZK (celé číslo) pokud purpose=sell, jinak 0. Použij tržní benchmarky: fotka 49-149, video 99-299, premium set 199-499. NIKDY pod 29 Kč.>
     }
   ],
   "styleNotes": "<PŘESNÝ styl komunikace pro TOHOTO zákazníka — tón, délka zpráv, emoji ano/ne, témata k použití, témata k vyhnutí>",
@@ -355,8 +361,36 @@ Vrať ČISTÝ JSON (bez markdown):
       console.error("[AI Manager] pricing engine fallback:", e);
     }
 
+    try {
+      const cesResult = await computeEngagementScore(userId);
+      profile.engagementScore = cesResult.decayedScore;
+      profile._cesRawScore = cesResult.rawScore;
+      profile._cesClassification = cesResult.classification;
+      profile._cesClassificationLabel = cesResult.classificationLabel;
+      profile._cesComponents = cesResult.components;
+      profile._cesDaysInactive = cesResult.daysInactive;
+      profile._cesWeeksSinceLastActivity = cesResult.weeksSinceLastActivity;
+
+      const { classification } = classifyByScore(cesResult.decayedScore);
+      if (classification === "monetized") {
+        profile.status = "hot";
+        profile.statusLabel = "Horký";
+      } else if (classification === "hot") {
+        profile.status = "hot";
+        profile.statusLabel = "Horký";
+      } else if (classification === "warm") {
+        profile.status = "warm";
+        profile.statusLabel = "Teplý";
+      } else {
+        profile.status = "cold";
+        profile.statusLabel = "Studený";
+      }
+    } catch (e) {
+      console.error("[AI Manager] CES scoring fallback:", e);
+    }
+
     await storage.updateAiProfile(userId, profile);
-    log("profile_updated", `${userName}: strategy=${profile.strategy}, engagement=${profile.engagementScore}%, stage=${profile.relationshipStage}`);
+    log("profile_updated", `${userName}: strategy=${profile.strategy}, CES=${profile.engagementScore}% (${profile._cesClassificationLabel || 'N/A'}), stage=${profile.relationshipStage}`);
     return profile;
   } catch (err) {
     log("analyze_error", `User ${userName} (${userId}): ${(err as Error).message}`);
@@ -378,7 +412,75 @@ function parseTimingToMs(timing: string): number {
   return 0;
 }
 
-async function executeAction(actionId: number, userId: number, message: string, photoId?: number): Promise<boolean> {
+async function generateStripeCheckoutUrl(userId: number, photoId: number, priceCzk: number): Promise<string | null> {
+  try {
+    const { getUncachableStripeClient } = await import("./stripeClient");
+    const { isStripeConnected } = await import("./stripeClient");
+    const connected = await isStripeConnected();
+    if (!connected) { log("stripe_not_connected", "Stripe není propojeno"); return null; }
+
+    const stripe = await getUncachableStripeClient();
+    const user = await storage.getUser(userId);
+    if (!user) return null;
+
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      const { stripeService } = await import("./stripeService");
+      const customer = await stripeService.createCustomer(user.name, { userId: String(user.id) });
+      customerId = customer.id;
+      await storage.updateStripeCustomerId(user.id, customerId);
+    }
+
+    const vaultItem = await storage.getContentItem(photoId);
+    const isVideo = vaultItem?.mimeType?.startsWith("video") || vaultItem?.originalName?.match(/\.(mp4|mov|avi|MOV|MP4)$/i);
+    const itemLabel = isVideo ? "Exkluzivní video" : "Exkluzivní fotka";
+
+    const baseUrl = process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000";
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'czk',
+          product_data: {
+            name: `${itemLabel} #${photoId} od Ninna Ray 🍒`,
+            description: `Odemkni ${isVideo ? "privátní video" : "privátní fotku"} přímo v chatu 💋`,
+          },
+          unit_amount: priceCzk * 100,
+        },
+        quantity: 1,
+      }],
+      mode: 'payment',
+      success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/chat`,
+      metadata: {
+        userId: String(userId),
+        contentItemId: String(photoId),
+        type: 'content_purchase',
+        source: 'ai_manager',
+      },
+    });
+
+    await storage.createPayment({
+      userId,
+      contentItemId: photoId,
+      amount: priceCzk * 100,
+      currency: 'czk',
+      status: 'pending',
+      stripeSessionId: session.id,
+      stripePaymentIntentId: null,
+      type: 'content',
+    });
+
+    log("stripe_checkout_created", `User #${userId} — ${itemLabel} #${photoId} za ${priceCzk} Kč, session: ${session.id}`);
+    return session.url || null;
+  } catch (err) {
+    log("stripe_checkout_error", `User #${userId}, photo #${photoId}: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+async function executeAction(actionId: number, userId: number, message: string, photoId?: number, price?: number): Promise<boolean> {
   try {
     if (enginePaused) {
       log("exec_skipped", `Action #${actionId} — engine pozastaven`);
@@ -391,12 +493,22 @@ async function executeAction(actionId: number, userId: number, message: string, 
       return false;
     }
 
+    let finalMessage = message;
+
+    if (photoId && price && price >= 29) {
+      const checkoutUrl = await generateStripeCheckoutUrl(userId, photoId, price);
+      if (checkoutUrl) {
+        finalMessage = `${message}\n\n💎 [UNLOCK_CONTENT:${photoId}:${price}:${checkoutUrl}]`;
+        log("exec_with_payment", `Action #${actionId} — přidán platební link, ${price} Kč`);
+      }
+    }
+
     const convs = await storage.getConversationsByUser(userId);
     if (convs.length === 0) {
       log("exec_no_conv", `User ${userId} — žádná konverzace, vytvářím novou`);
       const user = await storage.getUser(userId);
       const conv = await storage.createConversation(userId, user?.name || "Chat");
-      await storage.createMessage(conv.id, "assistant", message);
+      await storage.createMessage(conv.id, "assistant", finalMessage);
     } else {
       const latestConv = convs[0];
 
@@ -407,12 +519,12 @@ async function executeAction(actionId: number, userId: number, message: string, 
         const timeSinceLastMsg = Date.now() - lastMsgTime;
         if (timeSinceLastMsg < 10 * 60 * 1000) {
           log("exec_too_soon", `Action #${actionId} — poslední zpráva před ${Math.round(timeSinceLastMsg / 60000)} min, čekám`);
-          DELAYED_QUEUE.push({ actionId, userId, message, photoId, executeAt: Date.now() + 15 * 60 * 1000 });
+          DELAYED_QUEUE.push({ actionId, userId, message: finalMessage, photoId, executeAt: Date.now() + 15 * 60 * 1000 });
           return false;
         }
       }
 
-      await storage.createMessage(latestConv.id, "assistant", message);
+      await storage.createMessage(latestConv.id, "assistant", finalMessage);
     }
 
     if (photoId) {
@@ -426,12 +538,12 @@ async function executeAction(actionId: number, userId: number, message: string, 
 
     await storage.updateManagerAction(actionId, {
       status: "done",
-      result: "auto-sent",
+      result: price ? `auto-sent+stripe(${price}Kč)` : "auto-sent",
       executedAt: new Date(),
     });
 
     const user = await storage.getUser(userId);
-    log("exec_sent", `→ ${user?.name || userId}: "${message.substring(0, 60)}..." ${photoId ? `[fotka #${photoId}]` : ""}`);
+    log("exec_sent", `→ ${user?.name || userId}: "${message.substring(0, 60)}..." ${photoId ? `[fotka #${photoId}]` : ""} ${price ? `[${price} Kč]` : ""}`);
     return true;
   } catch (err) {
     log("exec_error", `Action #${actionId}: ${(err as Error).message}`);
@@ -458,11 +570,11 @@ async function processDelayedQueue() {
   }
 }
 
-async function scheduleOrExecuteAction(actionId: number, userId: number, message: string, timing: string, photoId?: number) {
+async function scheduleOrExecuteAction(actionId: number, userId: number, message: string, timing: string, photoId?: number, price?: number) {
   const delayMs = parseTimingToMs(timing);
 
   if (delayMs === 0) {
-    await executeAction(actionId, userId, message, photoId);
+    await executeAction(actionId, userId, message, photoId, price);
   } else {
     DELAYED_QUEUE.push({
       actionId,
@@ -519,7 +631,7 @@ async function runFullScan() {
               purpose: action.purpose,
               timing: action.timing,
             });
-            await scheduleOrExecuteAction(created.id, user.id, action.message, action.timing || "teď", action.photoId || undefined);
+            await scheduleOrExecuteAction(created.id, user.id, action.message, action.timing || "teď", action.photoId || undefined, action.price || undefined);
             actions++;
           }
         }
@@ -725,6 +837,155 @@ async function selfLearn() {
   }
 }
 
+async function updateAllEngagementScores() {
+  if (enginePaused) return;
+  try {
+    const allUsers = await storage.getAllUsers();
+    const customers = allUsers.filter(u => u.chatCode);
+    let updated = 0;
+
+    for (const user of customers) {
+      try {
+        const cesResult = await computeEngagementScore(user.id);
+        const existingProfile = (user.aiProfile as any) || {};
+        const { classification } = classifyByScore(cesResult.decayedScore);
+
+        let status = "cold";
+        let statusLabel = "Studený";
+        if (classification === "monetized" || classification === "hot") {
+          status = "hot";
+          statusLabel = "Horký";
+        } else if (classification === "warm") {
+          status = "warm";
+          statusLabel = "Teplý";
+        }
+
+        await storage.updateAiProfile(user.id, {
+          ...existingProfile,
+          engagementScore: cesResult.decayedScore,
+          status,
+          statusLabel,
+          _cesRawScore: cesResult.rawScore,
+          _cesClassification: cesResult.classification,
+          _cesClassificationLabel: cesResult.classificationLabel,
+          _cesComponents: cesResult.components,
+          _cesDaysInactive: cesResult.daysInactive,
+          _cesWeeksSinceLastActivity: cesResult.weeksSinceLastActivity,
+          _cesLastUpdated: new Date().toISOString(),
+        });
+        updated++;
+      } catch (e) {
+        // skip individual user errors
+      }
+    }
+
+    if (updated > 0) {
+      log("ces_batch_update", `Updated engagement scores for ${updated}/${customers.length} customers`);
+    }
+  } catch (err) {
+    log("ces_batch_error", (err as Error).message);
+  }
+}
+
+const alerts: { id: string; type: string; severity: string; message: string; timestamp: string; userId?: number; dismissed: boolean }[] = [];
+
+function addAlert(type: string, severity: "info" | "warning" | "critical", message: string, userId?: number) {
+  const id = `alert_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  alerts.push({ id, type, severity, message, timestamp: new Date().toISOString(), userId, dismissed: false });
+  if (alerts.length > 100) alerts.splice(0, alerts.length - 100);
+  log("alert_created", `[${severity}] ${message}`);
+}
+
+export function getAlerts(includeDismissed = false) {
+  return includeDismissed ? [...alerts] : alerts.filter(a => !a.dismissed);
+}
+
+export function dismissAlert(alertId: string) {
+  const alert = alerts.find(a => a.id === alertId);
+  if (alert) alert.dismissed = true;
+}
+
+async function reEngagementCheck() {
+  if (enginePaused) return;
+  try {
+    const allUsers = await storage.getAllUsers();
+    const allMessages = await storage.getAllMessages();
+    const allConversations = await storage.getAllConversations();
+    const customers = allUsers.filter(u => u.chatCode);
+
+    const convToUser = new Map<number, number>();
+    for (const c of allConversations) convToUser.set(c.id, c.userId);
+
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    let reEngaged = 0;
+
+    for (const user of customers) {
+      const userMsgs = allMessages.filter(m => {
+        const uid = convToUser.get(m.conversationId);
+        return uid === user.id && m.role === "user";
+      });
+
+      if (userMsgs.length === 0) continue;
+
+      const lastMsgTime = Math.max(...userMsgs.map(m => new Date(m.createdAt).getTime()));
+      const daysInactive = Math.floor((now - lastMsgTime) / DAY_MS);
+      const profile = user.aiProfile as any;
+      const engagement = profile?.engagementScore || 0;
+
+      if (daysInactive >= 1 && daysInactive <= 3 && engagement >= 30 && canSendToUser(user.id)) {
+        const reEngageMessages = [
+          `Ahoj ${user.name} 🍒 Chyběl jsi mi... Co nového?`,
+          `Hey ${user.name}! 💋 Dneska jsem myslela na tebe... Jak se máš?`,
+          `${user.name}, mám pro tebe něco speciálního 🔥 Ozvi se mi!`,
+        ];
+        const msg = reEngageMessages[Math.floor(Math.random() * reEngageMessages.length)];
+
+        const action = await storage.createManagerAction({
+          userId: user.id,
+          type: "message",
+          message: msg,
+          purpose: "re-engagement",
+          timing: "teď",
+        });
+
+        await scheduleOrExecuteAction(action.id, user.id, msg, "teď");
+        reEngaged++;
+      }
+
+      if (daysInactive >= 7 && engagement >= 20) {
+        addAlert("inactive_user", "warning", `${user.name} neaktivní ${daysInactive} dní (engagement ${engagement}%)`, user.id);
+      }
+    }
+
+    const allPayments = await storage.getAllPayments();
+    const pendingPayments = allPayments.filter(p => p.status === "pending" && p.createdAt);
+    for (const payment of pendingPayments) {
+      const paymentAge = now - new Date(payment.createdAt!).getTime();
+      if (paymentAge > 30 * 60 * 1000 && paymentAge < 2 * DAY_MS) {
+        addAlert("cart_abandonment", "info", `Nedokončená platba ${(payment.amount / 100)} Kč pro uživatele #${payment.userId}`, payment.userId || undefined);
+      }
+    }
+
+    if (reEngaged > 0) {
+      log("re_engagement", `Auto-osloveno ${reEngaged} neaktivních zákazníků`);
+    }
+
+    const hotUsers = customers.filter(u => {
+      const p = u.aiProfile as any;
+      return p && (p.status === "hot" || p.statusLabel === "Horký");
+    });
+    if (hotUsers.length >= 3) {
+      const recentPurchases = allPayments.filter(p => p.status === "completed" && p.createdAt && now - new Date(p.createdAt).getTime() < DAY_MS);
+      if (recentPurchases.length === 0) {
+        addAlert("hot_no_sales", "critical", `${hotUsers.length} horkých kontaktů bez prodeje za 24h — příležitost ke konverzi!`);
+      }
+    }
+  } catch (err) {
+    log("re_engagement_error", (err as Error).message);
+  }
+}
+
 export function startManagerEngine() {
   log("engine_start", "AI Manager Engine spuštěn — POZASTAVENÝ (čeká na spuštění ownerem)");
   setInterval(() => {
@@ -737,6 +998,12 @@ export function startManagerEngine() {
   setInterval(() => {
     if (!enginePaused) selfLearn();
   }, 30 * 60 * 1000);
+  setInterval(() => {
+    if (!enginePaused) updateAllEngagementScores();
+  }, 60 * 60 * 1000);
+  setInterval(() => {
+    if (!enginePaused) reEngagementCheck();
+  }, 15 * 60 * 1000);
 }
 
 export async function triggerAnalysis(userId: number, userName: string) {
@@ -753,7 +1020,7 @@ export async function triggerAnalysis(userId: number, userName: string) {
         purpose: action.purpose,
         timing: action.timing,
       });
-      await scheduleOrExecuteAction(created.id, userId, action.message, action.timing || "teď", action.photoId || undefined);
+      await scheduleOrExecuteAction(created.id, userId, action.message, action.timing || "teď", action.photoId || undefined, action.price || undefined);
     }
   }
 
@@ -778,7 +1045,7 @@ export async function onNewMessage(userId: number, userName: string) {
             purpose: action.purpose,
             timing: action.timing,
           });
-          await scheduleOrExecuteAction(created.id, userId, action.message, action.timing || "teď", action.photoId || undefined);
+          await scheduleOrExecuteAction(created.id, userId, action.message, action.timing || "teď", action.photoId || undefined, action.price || undefined);
         }
         log("auto_actions", `${userName}: ${profile.actionQueue.length} nových akcí auto-odesláno`);
       }

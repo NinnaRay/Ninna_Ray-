@@ -72,6 +72,19 @@ async function sendToAgency(userId: number, message: string, role: string) {
   }
 }
 
+const voiceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["audio/webm", "audio/mp4", "audio/mpeg", "audio/wav", "audio/ogg", "audio/x-m4a", "video/webm"];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported audio type: ${file.mimetype}`));
+    }
+  },
+});
+
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
 
   // ─── Auth routes ────────────────────────────────────────────────────────────
@@ -196,6 +209,30 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       ...conversation,
       messages
     });
+  });
+
+  // ─── Voice transcription endpoint ───────────────────────────────────────────
+
+  app.post("/api/voice/transcribe", voiceUpload.single("audio"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No audio file provided" });
+      }
+
+      const file = new File([req.file.buffer as BlobPart], req.file.originalname || "audio.webm", {
+        type: req.file.mimetype,
+      });
+
+      const transcription = await openai.audio.transcriptions.create({
+        file,
+        model: "whisper-1",
+      });
+
+      res.json({ text: transcription.text });
+    } catch (err) {
+      console.error("Voice transcription error:", err);
+      res.status(500).json({ message: "Transcription failed" });
+    }
   });
 
   // ─── Chat SSE endpoint (respects manual mode) ─────────────────────────────
@@ -508,6 +545,25 @@ NIKDY nesměruj uživatele mimo tuto aplikaci. NIKDY neodkazuj na žádné exter
     res.json({ ok: true, paused: !!paused });
   });
 
+  app.get("/api/manager/alerts", requireOwner, async (_req, res) => {
+    try {
+      const { getAlerts } = await import("./manager-engine");
+      res.json(getAlerts());
+    } catch (err) {
+      res.status(500).json({ message: "Chyba alertů" });
+    }
+  });
+
+  app.post("/api/manager/alerts/:id/dismiss", requireOwner, async (req, res) => {
+    try {
+      const { dismissAlert } = await import("./manager-engine");
+      dismissAlert(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ message: "Chyba" });
+    }
+  });
+
   app.get("/api/manager/market-intelligence", requireOwner, async (_req, res) => {
     try {
       const { getMarketIntelligence } = await import("./market-intelligence");
@@ -577,6 +633,115 @@ NIKDY nesměruj uživatele mimo tuto aplikaci. NIKDY neodkazuj na žádné exter
     }
   });
 
+  app.get("/api/manager/analytics/revenue", requireOwner, async (_req, res) => {
+    try {
+      const { getRevenueMetrics } = await import("./analytics-engine");
+      res.json(await getRevenueMetrics());
+    } catch (err) {
+      console.error("[Analytics] revenue error:", err);
+      res.status(500).json({ message: "Chyba revenue metrik" });
+    }
+  });
+
+  app.get("/api/manager/analytics/engagement-scores", requireOwner, async (_req, res) => {
+    try {
+      const { getEngagementScores } = await import("./analytics-engine");
+      res.json(await getEngagementScores());
+    } catch (err) {
+      console.error("[Analytics] engagement scores error:", err);
+      res.status(500).json({ message: "Chyba engagement skóre" });
+    }
+  });
+
+  app.get("/api/manager/analytics/weekly-report", requireOwner, async (_req, res) => {
+    try {
+      const { generateWeeklyReport } = await import("./analytics-engine");
+      res.json(await generateWeeklyReport());
+    } catch (err) {
+      console.error("[Analytics] weekly report error:", err);
+      res.status(500).json({ message: "Chyba týdenního reportu" });
+    }
+  });
+
+  app.get("/api/manager/analytics/weekly-report/export", requireOwner, async (_req, res) => {
+    try {
+      const { generateWeeklyReport } = await import("./analytics-engine");
+      const report = await generateWeeklyReport();
+
+      const lines: string[] = [];
+      lines.push("═══════════════════════════════════════════════════════");
+      lines.push("  NINNA RAY — TÝDENNÍ BUSINESS REPORT");
+      lines.push(`  Vygenerováno: ${new Date(report.generatedAt).toLocaleString("cs-CZ")}`);
+      lines.push("═══════════════════════════════════════════════════════");
+      lines.push("");
+      lines.push("▸ KPI PŘEHLED");
+      lines.push(`  MRR:        ${report.kpis.mrr} Kč`);
+      lines.push(`  ARPU:       ${report.kpis.arpu} Kč`);
+      lines.push(`  Churn Rate: ${report.kpis.churnRate}%`);
+      lines.push(`  NRR:        ${report.kpis.nrr}%`);
+      lines.push(`  Engagement: ${report.kpis.avgEngagement}%`);
+      lines.push("");
+
+      if (report.weekOverWeek?.length) {
+        lines.push("▸ TÝDEN vs. TÝDEN");
+        for (const w of report.weekOverWeek) {
+          lines.push(`  ${w.metric}: ${w.lastWeek} → ${w.thisWeek} (${w.change >= 0 ? "+" : ""}${w.change}%)`);
+        }
+        lines.push("");
+      }
+
+      if (report.topPerformers?.length) {
+        lines.push("▸ TOP ZÁKAZNÍCI");
+        for (const p of report.topPerformers) {
+          lines.push(`  ${p.name} — Engagement: ${p.engagement}%, Revenue: ${p.spent} Kč`);
+        }
+        lines.push("");
+      }
+
+      if (report.competitiveBenchmarks?.length) {
+        lines.push("▸ BENCHMARKY vs. INDUSTRIE");
+        for (const b of report.competitiveBenchmarks) {
+          lines.push(`  ${b.metric}: ${b.ours} vs ${b.industry} [${b.verdict}]`);
+        }
+        lines.push("");
+      }
+
+      if (report.strategicRecommendations?.length) {
+        lines.push("▸ STRATEGICKÉ DOPORUČENÍ");
+        for (const r of report.strategicRecommendations) {
+          lines.push(`  → ${r}`);
+        }
+        lines.push("");
+      }
+
+      lines.push("═══════════════════════════════════════════════════════");
+      lines.push("  © Ninna Ray Digital Agency Platform");
+      lines.push("═══════════════════════════════════════════════════════");
+
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="ninna-ray-report-${new Date().toISOString().slice(0, 10)}.txt"`);
+      res.send(lines.join("\n"));
+    } catch (err) {
+      console.error("[Analytics] export error:", err);
+      res.status(500).json({ message: "Export selhal" });
+    }
+  });
+
+  app.patch("/api/users/:id/platform", requireOwner, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { platform } = req.body;
+      const validPlatforms = ["direct", "instagram", "telegram", "facebook", "onlyfans", "fansly", "twitter"];
+      if (!validPlatforms.includes(platform)) {
+        return res.status(400).json({ message: "Neplatná platforma" });
+      }
+      await storage.updateUser(id, { platform });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ message: "Chyba" });
+    }
+  });
+
   app.get("/api/manager/actions", requireOwner, async (req, res) => {
     try {
       const since = req.query.since ? new Date(req.query.since as string) : undefined;
@@ -641,6 +806,7 @@ NIKDY nesměruj uživatele mimo tuto aplikaci. NIKDY neodkazuj na žádné exter
         aiProfile: u.aiProfile || null,
         aiProfileUpdatedAt: u.aiProfileUpdatedAt || null,
         stripeCustomerId: u.stripeCustomerId || null,
+        platform: u.platform || "direct",
       }));
 
       // Sort: hot first, then by last activity

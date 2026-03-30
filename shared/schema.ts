@@ -12,6 +12,7 @@ export const users = pgTable("users", {
   stripeCustomerId: text("stripe_customer_id"),
   aiProfile: jsonb("ai_profile"),
   aiProfileUpdatedAt: timestamp("ai_profile_updated_at"),
+  platform: text("platform").default("direct"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
