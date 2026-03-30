@@ -12,7 +12,7 @@ let isRunning = false;
 let enginePaused = true;
 let lastFullScan = 0;
 const SCAN_INTERVAL = 10 * 60 * 1000;
-const DELAYED_QUEUE: { actionId: number; userId: number; message: string; photoId?: number; executeAt: number }[] = [];
+const DELAYED_QUEUE: { actionId: number; userId: number; message: string; photoId?: number; price?: number; executeAt: number }[] = [];
 const logs: { time: string; event: string; detail: string }[] = [];
 
 const messageSendTimes: Record<number, number[]> = {};
@@ -103,7 +103,7 @@ export function setEnginePaused(paused: boolean) {
 }
 
 const MARKET_BENCHMARKS_REF = {
-  optimalFirst: { min: 39, max: 79 },
+  optimalFirst: { min: 49, max: 99 },
 };
 
 async function analyzeUser(userId: number, userName: string): Promise<any | null> {
@@ -258,22 +258,36 @@ INTERNÍ DATA TOHOTO ZÁKAZNÍKA:
 - Cenový rozsah nákupů: ${completedPayments.length > 0 ? `${Math.min(...completedPayments.map(p => p.amount)) / 100}-${Math.max(...completedPayments.map(p => p.amount)) / 100} Kč` : "žádné"}
 - Cenová citlivost: ${existingProfile?.priceSensitivity || "neznámá"}
 
-PRAVIDLA PRO CENU suggestedPrice:
-1. NIKDY nevymýšlej cenu z hlavy — VŽDY použij tržní tiers + historii zákazníka
-2. První nákup → použij "Entry" tier (${MARKET_BENCHMARKS_REF.optimalFirst.min}-${MARKET_BENCHMARKS_REF.optimalFirst.max} Kč)
-3. Opakovaný nákup → cena = průměr předchozích nákupů * 1.05-1.15 (v rámci odpovídajícího tieru)
-4. Vysoká cenová citlivost → -15% z vypočtené ceny
-5. Nízká cenová citlivost → +10% z vypočtené ceny
-6. Pokud nemáš dost dat → suggestedPrice = 0 (nenavrhuj cenu)
+═══ PPV (PAY-PER-VIEW) CENOVÁ STRATEGIE ═══
+Model: Zákazník platí za JEDNOTLIVÉ kusy obsahu. Nízká cena za kus → víc nákupů → vyšší celkový výdělek.
+
+CENÍK (STRIKTNÍ — dodržuj tyto rozsahy):
+  Fotka (PPV):     49-99 Kč (nový zákazník) | 129-199 Kč (opakovaný) | 249-349 Kč (VIP/premium)
+  Sada fotek 3-5:  99-199 Kč (nový) | 249-399 Kč (opakovaný) | 449-699 Kč (VIP)
+  Video do 2min:   99-199 Kč (nový) | 249-399 Kč (opakovaný) | 449-699 Kč (VIP)
+  Video 2+ min:    199-349 Kč (nový) | 399-699 Kč (opakovaný) | 799-1299 Kč (VIP)
+  Custom na míru:  349-599 Kč | 699-999 Kč | 1199-1999 Kč
+
+PRVNÍ NÁKUP: VŽDY ${MARKET_BENCHMARKS_REF.optimalFirst.min}-${MARKET_BENCHMARKS_REF.optimalFirst.max} Kč (ultra-nízká bariéra, impulzní nákup)
+OPAKOVANÝ: cena předchozího * 1.05-1.15, ale v rámci tieru
+VYSOKÁ citlivost na cenu: -15% | NÍZKÁ citlivost: +10%
+
+KLÍČOVÁ TAKTIKA:
+- Nabízej HODNĚ jednotlivých kusů za nízké ceny, ne jeden drahý
+- Série obsahu (part 1, 2, 3...) — nutí kupovat další
+- "Jen pro tebe" / "jen dnes" — urgency a exkluzivita
+- Po každém nákupu okamžitě tease na další obsah
+- Cíl: zákazník koupí 3-5+ kusů za session, ne 1 drahý kus
 
 - A/B PŘÍSTUP: ${existingProfile?.sellStyle === "direct" ? "Zkus tentokrát NEPŘÍMÝ přístup (tease, curiosity gap)." : existingProfile?.sellStyle === "indirect" ? "Zkus tentokrát PŘÍMÝ přístup (jasná nabídka, urgency)." : "Testuj oba přístupy — zapiš co funguje do sellStyle."}
-- PRESSURE CALIBRACE: ${timeSinceLastUserMsg > 48 ? "Zákazník je NEAKTIVNÍ — nulový prodejní tlak, pouze re-engage hook." : timeSinceLastUserMsg > 12 ? "Zákazník je ODMLČENÝ — jemný hook, žádný prodej." : daysSinceLastPurchase > 7 || daysSinceLastPurchase === -1 ? "Zákazník nekoupil nedávno — buduj vztah a teprve pak nabídni." : "Zákazník je AKTIVNÍ kupce — timing pro další nabídku."}
+- PRESSURE CALIBRACE: ${timeSinceLastUserMsg > 48 ? "Zákazník je NEAKTIVNÍ — nulový prodejní tlak, pouze re-engage hook." : timeSinceLastUserMsg > 12 ? "Zákazník je ODMLČENÝ — jemný hook, žádný prodej." : daysSinceLastPurchase > 7 || daysSinceLastPurchase === -1 ? "Zákazník nekoupil nedávno — buduj vztah a teprve pak nabídni." : "Zákazník je AKTIVNÍ kupce — timing pro další PPV nabídku."}
 
-═══ STRATEGIE (monetizace POUZE přes Stripe v aplikaci) ═══
-- Engagement 70+ → SELL: nabídni placený obsah přímo v chatu (fotky/videa za Stripe platbu), tease → zájem → nabídka → Stripe payment → unlock
-- Engagement 40-69 → BUILD: buduj vztah, personalizace, intimita, "special treatment", ŽÁDNÝ prodej
-- Engagement pod 40 → HOOK: testuj hooky, provokuj, re-engage, změň přístup, ŽÁDNÝ prodej
+═══ STRATEGIE (monetizace POUZE přes Stripe v aplikaci — PPV model) ═══
+- Engagement 50+ → SELL: nabídni PPV obsah (nízká cena, hodně kusů), tease → zájem → PPV nabídka → Stripe platba → unlock → hned tease další
+- Engagement 30-49 → BUILD: buduj vztah, personalizace, free preview, "special treatment", opatrný tease
+- Engagement pod 30 → HOOK: testuj hooky, provokuj, re-engage, free obsah jako návnada
 - NIKDY neodkazuj na externí platformy (OnlyFans, Fansly atd.) — vše probíhá v aplikaci
+- NIKDY nepřidávej platební link do zprávy — systém ho vygeneruje automaticky k tvé zprávě
 
 ═══ VÝSTUP ═══
 statusLabel MUSÍ být POUZE: "Horký", "Teplý", "Studený" nebo "Nový".
@@ -489,7 +503,7 @@ async function executeAction(actionId: number, userId: number, message: string, 
 
     if (!canSendToUser(userId)) {
       log("exec_throttled", `Action #${actionId} — uživatel ${userId} dosáhl limitu zpráv — odloženo o 60 min`);
-      DELAYED_QUEUE.push({ actionId, userId, message, photoId, executeAt: Date.now() + 60 * 60 * 1000 });
+      DELAYED_QUEUE.push({ actionId, userId, message, photoId, price, executeAt: Date.now() + 60 * 60 * 1000 });
       return false;
     }
 
@@ -519,7 +533,7 @@ async function executeAction(actionId: number, userId: number, message: string, 
         const timeSinceLastMsg = Date.now() - lastMsgTime;
         if (timeSinceLastMsg < 10 * 60 * 1000) {
           log("exec_too_soon", `Action #${actionId} — poslední zpráva před ${Math.round(timeSinceLastMsg / 60000)} min, čekám`);
-          DELAYED_QUEUE.push({ actionId, userId, message: finalMessage, photoId, executeAt: Date.now() + 15 * 60 * 1000 });
+          DELAYED_QUEUE.push({ actionId, userId, message: finalMessage, photoId, price, executeAt: Date.now() + 15 * 60 * 1000 });
           return false;
         }
       }
@@ -566,7 +580,7 @@ async function processDelayedQueue() {
     const action = (await storage.getManagerActions()).find(a => a.id === item.actionId);
     if (action?.status !== "pending") continue;
 
-    await executeAction(item.actionId, item.userId, item.message, item.photoId);
+    await executeAction(item.actionId, item.userId, item.message, item.photoId, item.price);
   }
 }
 
@@ -581,6 +595,7 @@ async function scheduleOrExecuteAction(actionId: number, userId: number, message
       userId,
       message,
       photoId,
+      price,
       executeAt: Date.now() + delayMs,
     });
     const user = await storage.getUser(userId);

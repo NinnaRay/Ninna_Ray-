@@ -80,94 +80,95 @@ const MARKET_BENCHMARKS: MarketData = {
   currency: "CZK",
   tiers: [
     {
-      name: "entry",
-      label: "Entry (rychlý prodej)",
-      priceRange: { min: 29, max: 79 },
-      description: "Nízká bariéra vstupu, testovací nákup. Ideální pro první konverzi.",
-      conversionBenchmark: 8.5,
+      name: "ppv_entry",
+      label: "PPV Entry (první nákup)",
+      priceRange: { min: 49, max: 99 },
+      description: "První nákup — rozumná cena co přesvědčí. Cíl: proměnit v kupce.",
+      conversionBenchmark: 8,
     },
     {
-      name: "standard",
-      label: "Standard",
-      priceRange: { min: 99, max: 249 },
-      description: "Běžný obsah — kvalitní fotky, krátká videa. Hlavní zdroj příjmů.",
-      conversionBenchmark: 4.2,
+      name: "ppv_standard",
+      label: "PPV Standard",
+      priceRange: { min: 129, max: 249 },
+      description: "Hlavní PPV tier. Kvalitní obsah za standardní cenu. Hlavní zdroj příjmů.",
+      conversionBenchmark: 5,
     },
     {
-      name: "premium",
-      label: "Premium",
-      priceRange: { min: 299, max: 599 },
-      description: "Exkluzivní obsah, delší videa, speciální requesty.",
-      conversionBenchmark: 2.1,
+      name: "ppv_premium",
+      label: "PPV Premium",
+      priceRange: { min: 299, max: 499 },
+      description: "Exkluzivnější obsah, delší videa. Pro zákazníky co už kupovali.",
+      conversionBenchmark: 3,
     },
     {
-      name: "vip",
-      label: "VIP / Custom",
-      priceRange: { min: 699, max: 1999 },
-      description: "Personalizovaný obsah na míru. Pouze pro ověřené kupce.",
-      conversionBenchmark: 0.8,
+      name: "ppv_vip",
+      label: "PPV VIP / Bundle",
+      priceRange: { min: 599, max: 1499 },
+      description: "Speciální balíčky, custom obsah. Pouze pro ověřené kupce s historií nákupů.",
+      conversionBenchmark: 1,
     },
   ],
   contentPricing: [
     {
       type: "photo_single",
-      label: "Jednotlivá fotka",
+      label: "Jednotlivá fotka (PPV)",
       tiers: {
-        low: { min: 29, max: 59 },
-        mid: { min: 69, max: 149 },
-        high: { min: 199, max: 349 },
+        low: { min: 49, max: 99 },
+        mid: { min: 129, max: 199 },
+        high: { min: 249, max: 349 },
       },
     },
     {
       type: "photo_set",
-      label: "Sada fotek (3-10)",
+      label: "Sada fotek 3-5ks (PPV)",
       tiers: {
-        low: { min: 79, max: 149 },
-        mid: { min: 199, max: 349 },
-        high: { min: 399, max: 699 },
+        low: { min: 99, max: 199 },
+        mid: { min: 249, max: 399 },
+        high: { min: 449, max: 699 },
       },
     },
     {
       type: "video_short",
-      label: "Krátké video (do 3 min)",
+      label: "Krátké video do 2 min (PPV)",
       tiers: {
         low: { min: 99, max: 199 },
-        mid: { min: 249, max: 449 },
-        high: { min: 499, max: 899 },
+        mid: { min: 249, max: 399 },
+        high: { min: 449, max: 699 },
       },
     },
     {
       type: "video_long",
-      label: "Dlouhé video (3+ min)",
+      label: "Delší video 2+ min (PPV)",
       tiers: {
-        low: { min: 199, max: 399 },
-        mid: { min: 449, max: 799 },
-        high: { min: 899, max: 1499 },
+        low: { min: 199, max: 349 },
+        mid: { min: 399, max: 699 },
+        high: { min: 799, max: 1299 },
       },
     },
     {
       type: "custom",
       label: "Custom obsah na míru",
       tiers: {
-        low: { min: 299, max: 499 },
-        mid: { min: 599, max: 999 },
+        low: { min: 349, max: 599 },
+        mid: { min: 699, max: 999 },
         high: { min: 1199, max: 1999 },
       },
     },
   ],
   benchmarks: {
-    avgConversionRate: 4.5,
+    avgConversionRate: 6,
     avgFirstPurchase: 79,
-    avgRepeatPurchase: 149,
-    avgLifetimeValue: 890,
-    optimalFirstOffer: { min: 39, max: 79 },
+    avgRepeatPurchase: 199,
+    avgLifetimeValue: 1500,
+    optimalFirstOffer: { min: 49, max: 99 },
   },
   trendingContent: [
     "Behind-the-scenes / osobní momenty",
-    "Interaktivní obsah (polls, otázky, volby)",
+    "Série obsahu (part 1, 2, 3... nutí kupovat další)",
     "Exkluzivní preview / coming soon teasery",
     "Personalizované zprávy a pozdravy",
-    "Lifestyle a 'day in my life' obsah",
+    "Limitované edice (jen dnes, jen pro tebe)",
+    "Reakce na požadavky zákazníka",
   ],
   leadSources: [
     { platform: "Instagram", potential: "vysoký", strategy: "Stories s teasery, link v bio, Reels pro reach" },
@@ -280,7 +281,7 @@ async function pricingEngine(userId: number, contentType: string): Promise<Prici
   let reasoning: string;
 
   if (isFirstBuy) {
-    tier = "entry";
+    tier = "ppv_entry";
     priceRange = MARKET_BENCHMARKS.benchmarks.optimalFirstOffer;
     basedOn.push("market_benchmark_first_purchase");
 
@@ -305,23 +306,23 @@ async function pricingEngine(userId: number, contentType: string): Promise<Prici
   } else {
     basedOn.push("user_purchase_history");
 
-    if (userAvgPayment < 100) {
-      tier = "standard";
+    if (userAvgPayment < 150) {
+      tier = "ppv_standard";
     } else if (userAvgPayment < 400) {
-      tier = "premium";
+      tier = "ppv_premium";
     } else {
-      tier = "vip";
+      tier = "ppv_vip";
     }
 
-    const tierConfig = MARKET_BENCHMARKS.tiers.find(t => t.name === tier)!;
-    priceRange = { ...tierConfig.priceRange };
+    const tierConfig = MARKET_BENCHMARKS.tiers.find(t => t.name === tier);
+    priceRange = tierConfig ? { ...tierConfig.priceRange } : { min: 129, max: 249 };
 
     if (contentConfig) {
-      const tierKey = tier === "entry" || tier === "standard" ? (tier === "entry" ? "low" : "mid") : "high";
+      const tierKey = tier === "ppv_entry" || tier === "ppv_standard" ? (tier === "ppv_entry" ? "low" : "mid") : "high";
       const contentRange = contentConfig.tiers[tierKey as keyof typeof contentConfig.tiers];
       if (contentRange) {
-        if (tier === "vip") {
-          priceRange = { min: Math.max(contentRange.max, tierConfig.priceRange.min), max: tierConfig.priceRange.max };
+        if (tier === "ppv_vip") {
+          priceRange = { min: Math.max(contentRange.max, priceRange.min), max: priceRange.max };
         } else {
           priceRange = contentRange;
         }

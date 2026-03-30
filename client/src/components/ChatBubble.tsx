@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, CheckCheck } from "lucide-react";
+import { Check, CheckCheck, Lock, Unlock, ExternalLink } from "lucide-react";
 
 interface ChatBubbleProps {
   role: "user" | "assistant";
@@ -11,8 +11,82 @@ interface ChatBubbleProps {
   isSeen?: boolean;
 }
 
+function PaymentButton({ photoId, price, url }: { photoId: string; price: string; url: string }) {
+  return (
+    <motion.a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      whileHover={{ scale: 1.03 }}
+      whileTap={{ scale: 0.97 }}
+      className="flex items-center gap-3 mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-pink-500/20 transition-all no-underline"
+      data-testid={`button-unlock-${photoId}`}
+    >
+      <Lock className="w-4 h-4 shrink-0" />
+      <span className="flex-1">Odemknout za {price} Kč</span>
+      <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-60" />
+    </motion.a>
+  );
+}
+
+function UnlockedContent({ photoId }: { photoId: string }) {
+  return (
+    <div className="flex items-center gap-2 mt-3 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-bold" data-testid={`unlocked-${photoId}`}>
+      <Unlock className="w-4 h-4 shrink-0" />
+      <span>Obsah odemknut</span>
+    </div>
+  );
+}
+
+function parseContentParts(content: string) {
+  const unlockRegex = /\[UNLOCK_CONTENT:(\d+):(\d+):(https?:\/\/[^\]]+)\]/g;
+  const unlockedRegex = /\[UNLOCKED_CONTENT:(\d+)\]/g;
+
+  const parts: Array<{ type: "text"; value: string } | { type: "unlock"; photoId: string; price: string; url: string } | { type: "unlocked"; photoId: string }> = [];
+
+  let lastIndex = 0;
+  const allMatches: Array<{ index: number; length: number; result: any }> = [];
+
+  let match;
+  while ((match = unlockRegex.exec(content)) !== null) {
+    allMatches.push({
+      index: match.index,
+      length: match[0].length,
+      result: { type: "unlock" as const, photoId: match[1], price: match[2], url: match[3] },
+    });
+  }
+  while ((match = unlockedRegex.exec(content)) !== null) {
+    allMatches.push({
+      index: match.index,
+      length: match[0].length,
+      result: { type: "unlocked" as const, photoId: match[1] },
+    });
+  }
+
+  allMatches.sort((a, b) => a.index - b.index);
+
+  for (const m of allMatches) {
+    if (m.index > lastIndex) {
+      const text = content.slice(lastIndex, m.index).trim();
+      if (text) parts.push({ type: "text", value: text });
+    }
+    parts.push(m.result);
+    lastIndex = m.index + m.length;
+  }
+
+  if (lastIndex < content.length) {
+    const text = content.slice(lastIndex).trim();
+    if (text) parts.push({ type: "text", value: text });
+  }
+
+  return parts.length > 0 ? parts : [{ type: "text" as const, value: content }];
+}
+
 export function ChatBubble({ role, content, isTyping, isSeen }: ChatBubbleProps) {
   const isUser = role === "user";
+  const parts = !isTyping && content ? parseContentParts(content) : [];
 
   return (
     <motion.div
@@ -38,8 +112,23 @@ export function ChatBubble({ role, content, isTyping, isSeen }: ChatBubbleProps)
             <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce" />
           </div>
         ) : (
-          <div className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-a:text-pink-500 prose-a:underline hover:prose-a:text-pink-400 break-words">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <div>
+            {parts.map((part, i) => {
+              if (part.type === "text") {
+                return (
+                  <div key={i} className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-a:text-pink-500 prose-a:underline hover:prose-a:text-pink-400 break-words">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.value}</ReactMarkdown>
+                  </div>
+                );
+              }
+              if (part.type === "unlock") {
+                return <PaymentButton key={i} photoId={part.photoId} price={part.price} url={part.url} />;
+              }
+              if (part.type === "unlocked") {
+                return <UnlockedContent key={i} photoId={part.photoId} />;
+              }
+              return null;
+            })}
           </div>
         )}
       </div>
