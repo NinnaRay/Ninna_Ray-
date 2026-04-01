@@ -124,10 +124,14 @@ async function analyzeUser(userId: number, userName: string): Promise<any | null
       .join("\n");
 
     const vaultItems = await storage.getAllContentItems();
-    const photoList = vaultItems
-      .filter(item => item.mimeType.startsWith("image") || item.mimeType.startsWith("video"))
-      .map(item => `[ID:${item.id}] "${item.originalName}" (${item.category}${item.tags.length > 0 ? ", tagy: " + item.tags.join(", ") : ""}${item.description ? ", popis: " + item.description : ""})`)
-      .join("\n");
+    const photoItems = vaultItems.filter(item => item.mimeType.startsWith("image"));
+    const videoItems = vaultItems.filter(item => item.mimeType.startsWith("video"));
+    const photoList = [
+      `📸 FOTKY (${photoItems.length} ks):`,
+      ...photoItems.map(item => `  [ID:${item.id}] "${item.originalName}" (${item.category}${item.tags.length > 0 ? ", tagy: " + item.tags.join(", ") : ""}${item.description ? ", popis: " + item.description : ""})`),
+      `🎬 VIDEA (${videoItems.length} ks):`,
+      ...videoItems.map(item => `  [ID:${item.id}] "${item.originalName}" (${item.category}${item.tags.length > 0 ? ", tagy: " + item.tags.join(", ") : ""}${item.description ? ", popis: " + item.description : ""})`)
+    ].join("\n");
 
     const user = await storage.getUser(userId);
     const existingProfile = user?.aiProfile as any;
@@ -188,7 +192,18 @@ INSTRUKCE: Používej typy zpráv s vysokým response rate. Vyhni se typům s n�
 
     const purchaseCount = completedPayments.length;
     const userIntent = purchaseCount >= 3 ? "HIGH" : purchaseCount >= 1 ? "MEDIUM" : "NEW";
-    const upsellTarget = purchaseCount === 0 ? "199-349" : purchaseCount === 1 ? "375-749" : purchaseCount === 2 ? "749-1249" : "1249+";
+
+    let photoPricing = { recommendedPrice: 249, tier: "ppv_entry", confidence: "low" as string, reasoning: "default" };
+    let videoPricing = { recommendedPrice: 399, tier: "ppv_entry", confidence: "low" as string, reasoning: "default" };
+    try {
+      photoPricing = await getPricingForUser(userId, "photo_single");
+      videoPricing = await getPricingForUser(userId, "video_short");
+    } catch (e) {
+      console.error("[AI Manager] pre-pricing error:", e);
+    }
+
+    const photoPrice = photoPricing.recommendedPrice;
+    const videoPrice = videoPricing.recommendedPrice;
 
     const analysisPrompt = `Jsi AUTONOMNÍ AI MANAŽER digitální agentury Ninna Ray. Prodáváš exkluzivní obsah PŘÍMO V APLIKACI přes Stripe. Rozhoduješ a generuješ akce — NIKDY nečekáš na potvrzení.
 NIKDY neodkazuj na OnlyFans ani žádné externí platformy. Veškerá monetizace probíhá IN-APP přes Stripe.
@@ -213,6 +228,10 @@ Průměrná délka zprávy: ${Math.round(avgUserMsgLen)} znaků
 Poslední zpráva zákazníka: "${lastUserMsg?.content?.substring(0, 200) || "žádná"}" (před ${timeSinceLastUserMsg}h)
 Poslední odpověď Ninna: "${lastAssistantMsg?.content?.substring(0, 200) || "žádná"}"
 Počet nákupů: ${purchaseCount} | Intent level: ${userIntent}
+SYSTÉM VYPOČÍTAL CENY PRO TOHOTO ZÁKAZNÍKA:
+  → Fotka: ${photoPrice} Kč (tier: ${photoPricing.tier}, confidence: ${photoPricing.confidence})
+  → Video: ${videoPrice} Kč (tier: ${videoPricing.tier}, confidence: ${videoPricing.confidence})
+  → Důvod: ${photoPricing.reasoning}
 ${previousContext}
 ${purchaseContext}
 ${learningContext}
@@ -231,47 +250,35 @@ ${photoList || "(žádné fotky nahrané)"}
   → projevuje jakýkoli zájem
   → NENÍ úplně dead
   Flow:
-  1) "hmm… něco mi říká, že by tě zajímalo víc 😄"
-  2) "ale tohle už neukazuju jen tak tady"
-  3) → ZAMKNI OBSAH (199-349 Kč — NIKDY pod 199 Kč)
+  1) Naznač: "hmm… něco mi říká, že by tě zajímalo víc 😄"
+  2) Zamkni: "ale tohle už neukazuju jen tak tady"
+  3) → SELL: vyber fotku/video z vaultu, purpose=sell, POUŽIJ SYSTÉMOVOU CENU
   4) "můžu ti to odemknout"
   5) STOP. Nežvanit dál. NECH HO REAGOVAT.
 
-▸ PO PRVNÍM NÁKUPU — OKAMŽITĚ:
+▸ PO NÁKUPU — OKAMŽITĚ:
   1) Potvrď vibe: "hmm… tak ty jsi takovej 😏"
-  2) Během 1-2 zpráv nabídni DALŠÍ (vyšší cena):
-     "tohle byl jen začátek…" → zamkni lepší obsah (375-749 Kč)
-
-▸ UPSELL ŽEBŘÍČEK (podle počtu nákupů tohoto zákazníka):
-  1. nákup → 199-349 Kč (fotka, teasing)
-  2. nákup → 375-749 Kč (lepší fotka/set, krátké video)
-  3. nákup → 749-1249 Kč (balíček, delší video)
-  4.+ nákup → 1249+ Kč (premium, custom)
-  Aktuální target pro TOHOTO zákazníka: ${upsellTarget} Kč
+  2) Během 1-2 zpráv nabídni DALŠÍ (vyšší cena = video místo fotky, nebo vyšší tier):
+     "tohle byl jen začátek…" → zamkni lepší obsah
 
 ▸ PASIVNÍ UŽIVATEL (krátké odpovědi, nezaujatý):
-  - Max 2-4 zprávy, pak rovnou:
-    "nejsi úplně upovídanej… ale něco by tě asi zajímalo 😄"
-  → ZAMKNI OBSAH (nižší cena z aktuálního tieru)
+  Max 2-4 zprávy, pak rovnou sell. Nekomplikuj.
 
 ▸ AGRESIVNÍ / SEXUÁLNÍ:
-  - NEODMÍTEJ tvrdě — otoč na placený obsah:
-    "tohle už ale není free věc" → ZAMKNI OBSAH
+  Neodmítej — otoč na sell: "tohle už ale není free věc" → SELL
 
-▸ ADAPTIVNÍ CENY (POVINNÉ):
-  ${userIntent === "HIGH" ? "→ HIGH INTENT: Zvyš ceny, rychlý upsell, nabízej premium/custom" : userIntent === "MEDIUM" ? "→ MEDIUM INTENT: Drž střed, víc tease, buduj touhu před další nabídkou" : "→ NEW USER: Max 1-2 pokusy o prodej. Pokud ignoruje → neplýtvej časem, změň styl."}
+▸ ADAPTIVNÍ CENY:
+  ${userIntent === "HIGH" ? "HIGH INTENT — kupuje rychle → zvyš cenu o 20%, nabízej videa a premium" : userIntent === "MEDIUM" ? "MEDIUM INTENT — už kupoval → víc tease před sellem, nabízej vyšší tier" : "NEW USER — první nákup → použij systémovou cenu pro fotku, max 1-2 pokusy"}
 
-═══ CENÍK (STRIKTNÍ — HIGH VALUE MODE) ═══
-  Fotka:          199-299 Kč (1. nákup) | 375-599 Kč (2.+) | 749-1249 Kč (VIP)
-  Sada fotek:     299-499 Kč | 599-999 Kč | 1249-1999 Kč
-  Video do 2min:  299-499 Kč | 599-999 Kč | 1249-1999 Kč
-  Video 2+ min:   499-749 Kč | 999-1499 Kč | 1999-3499 Kč
-  Custom:         749-1249 Kč | 1499-2499 Kč | 2999-4999 Kč
+═══ CENY — SYSTÉM JE VYPOČÍTAL, POUŽIJ JE ═══
+  FOTKA pro tohoto zákazníka: ${photoPrice} Kč
+  VIDEO pro tohoto zákazníka: ${videoPrice} Kč
+  Tier: ${photoPricing.tier} | Confidence: ${photoPricing.confidence}
 
-  PRVNÍ NÁKUP: VŽDY 199-349 Kč. NIKDY pod 199 Kč. Testuj 225/249/299/349.
-  OPAKOVANÝ: předchozí cena × 1.2-1.5 (agresivnější upsell)
-  HIGH INTENT (kupuje rychle): +20% k ceně
-  VÁHÁ: Změň styl/timing, NE hned cenu dolů. Cenu sniž jen jako poslední možnost.
+  PRAVIDLO: V "price" poli v actionQueue VŽDY použij ${photoPrice} pro fotku nebo ${videoPrice} pro video.
+  Můžeš přidat max ±10% podle situace, ale NIKDY pod 199 Kč.
+  Pokud nabízíš SADU fotek → cena × 1.5
+  Pokud nabízíš DELŠÍ video → cena × 1.5-2
 
 ═══ KOMUNIKAČNÍ PRAVIDLA ═══
 - Přizpůsob styl zákazníkovi (krátké zprávy → piš krátce, emoji → používej emoji)
@@ -314,7 +321,7 @@ Vrať ČISTÝ JSON (bez markdown):
       "purpose": "build|sell|hook",
       "photoId": <ID fotky nebo null — pokud purpose=sell, VŽDY vyber konkrétní fotku z dostupných>,
       "photoNote": "<proč tuto fotku — jaký scénář, jaký efekt>",
-      "price": <cena v CZK (celé číslo) pokud purpose=sell, jinak 0. Použij UPSELL ŽEBŘÍČEK výše: 1. nákup 199-349, 2. nákup 375-749, 3.+ 749-1249, VIP 1249+. NIKDY pod 199 Kč.>
+      "price": <cena v CZK (celé číslo). POVINNÉ pro purpose=sell. Použij SYSTÉMOVOU CENU: ${photoPrice} pro fotku, ${videoPrice} pro video. Můžeš ±10%, NIKDY pod 199. Pro build/hook = 0.>
     }
   ],
   "styleNotes": "<PŘESNÝ styl komunikace pro TOHOTO zákazníka — tón, délka zpráv, emoji ano/ne, témata k použití, témata k vyhnutí>",

@@ -282,11 +282,15 @@ async function pricingEngine(userId: number, contentType: string): Promise<Prici
 
   if (isFirstBuy) {
     tier = "ppv_entry";
-    priceRange = MARKET_BENCHMARKS.benchmarks.optimalFirstOffer;
+    if (contentConfig) {
+      priceRange = { ...contentConfig.tiers.low };
+      basedOn.push(`content_type_${contentType}`);
+    } else {
+      priceRange = MARKET_BENCHMARKS.benchmarks.optimalFirstOffer;
+    }
     basedOn.push("market_benchmark_first_purchase");
 
     if (metrics.totalTransactions >= 5 && metrics.avgTransactionValue > 0) {
-      const internalFirstBuyPrices = userPayments.length === 0 ? [] : [];
       const allPayments = await storage.getAllPayments();
       const firstBuys = new Map<number, number>();
       for (const p of allPayments.filter(pp => pp.status === "completed")) {
@@ -295,14 +299,14 @@ async function pricingEngine(userId: number, contentType: string): Promise<Prici
       const firstBuyPrices = Array.from(firstBuys.values());
       if (firstBuyPrices.length >= 3) {
         const avgFirstBuy = Math.round(firstBuyPrices.reduce((s, v) => s + v, 0) / firstBuyPrices.length);
-        priceRange = { min: Math.max(199, avgFirstBuy - 20), max: Math.max(249, avgFirstBuy + 20) };
+        priceRange = { min: Math.max(priceRange.min, avgFirstBuy - 20), max: Math.max(priceRange.max, avgFirstBuy + 20) };
         basedOn.push("internal_first_buy_avg");
       }
     }
 
     recommendedPrice = Math.round((priceRange.min + priceRange.max) / 2);
     confidence = metrics.totalTransactions >= 5 ? "medium" : "low";
-    reasoning = `První nákup — nízká bariéra vstupu. ${confidence === "low" ? "Málo interních dat, použit tržní benchmark." : "Cena založena na interním průměru prvních nákupů."}`;
+    reasoning = `První nákup (${contentType}). ${confidence === "low" ? "Málo interních dat, použit tržní benchmark." : "Cena založena na interním průměru prvních nákupů."}`;
   } else {
     basedOn.push("user_purchase_history");
 
