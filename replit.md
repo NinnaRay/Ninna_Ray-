@@ -42,7 +42,7 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 ### Stripe Integration
 - **In-App PPV Sales**: All payment processes occur within the application via Stripe Checkout.
 - **Dynamic Pricing**: `POST /api/stripe/content-checkout` creates dynamic prices for content items in CZK.
-- **AI Manager Auto-Sell**: When engagement is 50+, AI Manager generates Stripe checkout links embedded in chat messages via `[UNLOCK_CONTENT:photoId:price:url]` markers.
+- **AI Manager Auto-Sell**: AI Manager follows playbook-driven sell flow (hint→lock→sell between messages 3-10, upsell ladder by purchase count). Generates Stripe checkout links embedded in chat via `[UNLOCK_CONTENT:photoId:price:url]` markers.
 - **ChatBubble Payment Buttons**: Frontend renders payment markers as styled "Odemknout za X Kč" buttons with Stripe redirect.
 - **Webhook Handling**: Processes `checkout.session.completed` (marks payment completed + sends confirmation message to chat with `[UNLOCKED_CONTENT:id]`), `payment_intent.succeeded`, `payment_intent.payment_failed` events.
 - **Customer Flow**: Chat → AI tease → PPV content offer with Stripe button → Stripe Checkout → webhook → confirmation in chat + content unlock.

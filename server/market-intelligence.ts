@@ -82,85 +82,85 @@ const MARKET_BENCHMARKS: MarketData = {
     {
       name: "ppv_entry",
       label: "PPV Entry (první nákup)",
-      priceRange: { min: 49, max: 99 },
-      description: "První nákup — rozumná cena co přesvědčí. Cíl: proměnit v kupce.",
-      conversionBenchmark: 8,
+      priceRange: { min: 199, max: 349 },
+      description: "První nákup — filtruje neplatiče. Nesnižuj pod 199 Kč. Testuj 225/299/375.",
+      conversionBenchmark: 6,
     },
     {
       name: "ppv_standard",
-      label: "PPV Standard",
-      priceRange: { min: 129, max: 249 },
-      description: "Hlavní PPV tier. Kvalitní obsah za standardní cenu. Hlavní zdroj příjmů.",
-      conversionBenchmark: 5,
+      label: "PPV Standard (2. nákup)",
+      priceRange: { min: 375, max: 749 },
+      description: "Druhý nákup — ověřený kupec. Vyšší kvalita obsahu, vyšší cena.",
+      conversionBenchmark: 4,
     },
     {
       name: "ppv_premium",
-      label: "PPV Premium",
-      priceRange: { min: 299, max: 499 },
-      description: "Exkluzivnější obsah, delší videa. Pro zákazníky co už kupovali.",
+      label: "PPV Premium (3.+ nákup)",
+      priceRange: { min: 749, max: 1999 },
+      description: "Balíčky, delší videa, série. Pro zákazníky se 2+ nákupy.",
       conversionBenchmark: 3,
     },
     {
       name: "ppv_vip",
-      label: "PPV VIP / Bundle",
-      priceRange: { min: 599, max: 1499 },
-      description: "Speciální balíčky, custom obsah. Pouze pro ověřené kupce s historií nákupů.",
+      label: "PPV VIP / Custom",
+      priceRange: { min: 1999, max: 4999 },
+      description: "Custom obsah, osobní. Pouze pro ověřené high-spendery.",
       conversionBenchmark: 1,
     },
   ],
   contentPricing: [
     {
       type: "photo_single",
-      label: "Jednotlivá fotka (PPV)",
+      label: "Jednotlivá fotka",
       tiers: {
-        low: { min: 49, max: 99 },
-        mid: { min: 129, max: 199 },
-        high: { min: 249, max: 349 },
+        low: { min: 199, max: 299 },
+        mid: { min: 375, max: 599 },
+        high: { min: 749, max: 1249 },
       },
     },
     {
       type: "photo_set",
-      label: "Sada fotek 3-5ks (PPV)",
+      label: "Sada fotek 3-5ks",
       tiers: {
-        low: { min: 99, max: 199 },
-        mid: { min: 249, max: 399 },
-        high: { min: 449, max: 699 },
+        low: { min: 299, max: 499 },
+        mid: { min: 599, max: 999 },
+        high: { min: 1249, max: 1999 },
       },
     },
     {
       type: "video_short",
-      label: "Krátké video do 2 min (PPV)",
+      label: "Krátké video do 2 min",
       tiers: {
-        low: { min: 99, max: 199 },
-        mid: { min: 249, max: 399 },
-        high: { min: 449, max: 699 },
+        low: { min: 299, max: 499 },
+        mid: { min: 599, max: 999 },
+        high: { min: 1249, max: 1999 },
       },
     },
     {
       type: "video_long",
-      label: "Delší video 2+ min (PPV)",
+      label: "Delší video 2+ min",
       tiers: {
-        low: { min: 199, max: 349 },
-        mid: { min: 399, max: 699 },
-        high: { min: 799, max: 1299 },
+        low: { min: 499, max: 749 },
+        mid: { min: 999, max: 1499 },
+        high: { min: 1999, max: 3499 },
       },
     },
     {
       type: "custom",
       label: "Custom obsah na míru",
       tiers: {
-        low: { min: 349, max: 599 },
-        mid: { min: 699, max: 999 },
-        high: { min: 1199, max: 1999 },
+        low: { min: 749, max: 1249 },
+        mid: { min: 1499, max: 2499 },
+        high: { min: 2999, max: 4999 },
       },
     },
   ],
   benchmarks: {
-    avgConversionRate: 6,
-    avgFirstPurchase: 79,
-    avgRepeatPurchase: 199,
-    avgLifetimeValue: 1500,
-    optimalFirstOffer: { min: 49, max: 99 },
+    avgConversionRate: 5,
+    avgFirstPurchase: 249,
+    avgRepeatPurchase: 599,
+    avgLifetimeValue: 4500,
+    optimalFirstOffer: { min: 199, max: 349 },
   },
   trendingContent: [
     "Behind-the-scenes / osobní momenty",
@@ -295,7 +295,7 @@ async function pricingEngine(userId: number, contentType: string): Promise<Prici
       const firstBuyPrices = Array.from(firstBuys.values());
       if (firstBuyPrices.length >= 3) {
         const avgFirstBuy = Math.round(firstBuyPrices.reduce((s, v) => s + v, 0) / firstBuyPrices.length);
-        priceRange = { min: Math.max(29, avgFirstBuy - 20), max: avgFirstBuy + 20 };
+        priceRange = { min: Math.max(199, avgFirstBuy - 20), max: Math.max(249, avgFirstBuy + 20) };
         basedOn.push("internal_first_buy_avg");
       }
     }
@@ -306,16 +306,16 @@ async function pricingEngine(userId: number, contentType: string): Promise<Prici
   } else {
     basedOn.push("user_purchase_history");
 
-    if (userAvgPayment < 150) {
+    if (userAvgPayment < 400) {
       tier = "ppv_standard";
-    } else if (userAvgPayment < 400) {
+    } else if (userAvgPayment < 1000) {
       tier = "ppv_premium";
     } else {
       tier = "ppv_vip";
     }
 
     const tierConfig = MARKET_BENCHMARKS.tiers.find(t => t.name === tier);
-    priceRange = tierConfig ? { ...tierConfig.priceRange } : { min: 129, max: 249 };
+    priceRange = tierConfig ? { ...tierConfig.priceRange } : { min: 375, max: 749 };
 
     if (contentConfig) {
       const tierKey = tier === "ppv_entry" || tier === "ppv_standard" ? (tier === "ppv_entry" ? "low" : "mid") : "high";
