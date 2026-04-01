@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -32,10 +33,47 @@ function PaymentButton({ photoId, price, url }: { photoId: string; price: string
 }
 
 function UnlockedContent({ photoId }: { photoId: string }) {
+  const [mediaInfo, setMediaInfo] = useState<{ isVideo: boolean; isImage: boolean } | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/content/info/${photoId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setMediaInfo(data); })
+      .catch(() => {});
+  }, [photoId]);
+
+  const mediaUrl = `/api/content/unlocked/${photoId}`;
+
   return (
-    <div className="flex items-center gap-2 mt-3 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-bold" data-testid={`unlocked-${photoId}`}>
-      <Unlock className="w-4 h-4 shrink-0" />
-      <span>Obsah odemknut</span>
+    <div className="mt-3" data-testid={`unlocked-${photoId}`}>
+      <div className="flex items-center gap-2 px-4 py-2 rounded-t-xl bg-emerald-500/10 border border-emerald-500/30 border-b-0 text-emerald-400 text-sm font-bold">
+        <Unlock className="w-4 h-4 shrink-0" />
+        <span>Obsah odemknut 🔓</span>
+      </div>
+      {!loadError && mediaInfo?.isVideo ? (
+        <video
+          src={mediaUrl}
+          controls
+          playsInline
+          className="w-full max-w-sm rounded-b-xl border border-emerald-500/30 border-t-0"
+          onError={() => setLoadError(true)}
+          data-testid={`video-unlocked-${photoId}`}
+        />
+      ) : !loadError && (mediaInfo?.isImage || mediaInfo === null) ? (
+        <img
+          src={mediaUrl}
+          alt="Odemknutý obsah"
+          className="w-full max-w-sm rounded-b-xl border border-emerald-500/30 border-t-0 object-cover"
+          onError={() => setLoadError(true)}
+          loading="lazy"
+          data-testid={`img-unlocked-${photoId}`}
+        />
+      ) : (
+        <div className="px-4 py-3 rounded-b-xl bg-emerald-500/5 border border-emerald-500/30 border-t-0 text-emerald-400/70 text-xs">
+          Obsah je odemknutý.
+        </div>
+      )}
     </div>
   );
 }

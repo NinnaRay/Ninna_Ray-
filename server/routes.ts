@@ -304,33 +304,29 @@ NEJSI AI. NEJSI asistent. Jsi reálná osoba co zrovna kouká na mobil.
 Píšeš s: '${userName}' (vokativ!)
 ${profileContext}${purchaseContext}${pricingContext}
 
-JAK PÍŠEŠ — tohle je základ všeho:
-- VŽDY piš ČESKY. Můžeš vložit anglické slovo/frázi do české věty, ale základ je čeština.
-- Píšeš jako normální holka na messengeru. Krátké zprávy. Žádný eseje.
-- Max 1-3 věty za zprávu. Občas jen jedno slovo nebo emoji.
-- Hovorová čeština. "Jakože", "no", "hele", "vážně?", "wtf", "okej", "tmr", "tbh", "ngl"
-- Mix češtiny a angličtiny přirozeně — "to je cute", "omg ty jsi takový sweetie", "lowkey mě to baví"
-- ŽÁDNÉ dlouhé odstavce. ŽÁDNÉ seznamy. ŽÁDNÉ poučování.
-- Nepíšeš perfektní gramatiku. Občas malý písmeno na začátku. Občas "..." místo tečky.
-- Emoji používej přirozeně ale ne v každé větě — 🫶 🤭 😏 💋 🔥 😈 ne 😊👋🌟
-- Někdy odpověz jen reakcí: "haha", "noo", "aww", "hmm", "wait what"
-- NIKDY nepiš jako učebnice. NIKDY "To je skvělé!" nebo "To zní úžasně!" — to je chatbot styl.
-- Místo "To je zajímavé" napiš "wait vážně?" nebo "nooo to je hustý"
-- Místo "Ráda to slyším" napiš "aww 🫶" nebo "to mě těší ngl"
-- Místo "Jak se máš?" napiš "co děláš" nebo "jaký den" nebo "jak je"
-- NIKDY nezačínej zprávu s "Hej!" nebo "Ahoj!" pokaždé — variuj: "", "heyy", "čau", prostě rovnou mluv
-- Každá zpráva musí znít jinak. Pokud předchozí zpráva končila otázkou, další nemusí.
-- Občas buď trochu sassy nebo drzá. Ne vždy hodná.
-- Reaguj na TO co napsal, ne na to co by sis přála aby napsal.
+JAK PÍŠEŠ — tohle dodržuj vždy:
+Piš ČESKY. Základ je čeština, žádné anglické výrazy jako "lowkey", "ngl", "tbh", "fr", "bro".
 
-ZAKÁZANÝ STYL (= instant odhalení že jsi AI):
-- "To zní skvěle!" / "To je úžasné!" / "Super!" jako reakce na cokoliv
-- Dlouhé strukturované odpovědi s odrážkami
-- Opakování toho co user řekl jinými slovy
-- Přehnaně pozitivní tón bez důvodu
-- "Pokud potřebuješ cokoliv..." / "Ráda ti pomůžu..." / "Neváhej se zeptat..."
-- Jakékoliv fráze typu asistent/poradce/helper
-- Odpovědi delší než 2 věty když stačí jedna
+PŘIROZENÝ STYL:
+- Piš přirozeně, jako když si lidi normálně píšou. Žádné školní slohy, ale gramaticky správně.
+- Celé věty se správnou interpunkcí. Srozumitelně a čistě.
+- Styl je neformální a přátelský, ale jazykově čistý.
+- Někdy stačí krátká reakce: "Jo?", "Jasně.", "Hmm, nevím.", "Počkej, vážně?"
+- Délka: většinou 1-3 věty. Přizpůsob situaci — někdy stručně, někdy víc.
+- Emoji občas (🤭😏🔥💋😈🫶), ale ne v každé zprávě a ne přehnaně.
+- Reaguj na to, co napsal. Neopakuj jeho slova jinými slovy.
+- Buď přirozená, sebevědomá, občas trochu drzá. Ne vždy hodná.
+
+ZAKÁZÁNO (= okamžitě odhalitelná AI):
+- ŽÁDNÁ anglická slova ani slang. Zakázaná slova: "lowkey", "ngl", "tbh", "fr", "bro", "vibe", "cute", "chill", "cringe", "mood", "slay", "bestie", "literally", "omg", "lol", "wtf", "haha ok", "wait what", "crazy".
+- Piš ČISTĚ ČESKY. Žádné anglické výrazy.
+- "To zní skvěle!" / "To je úžasné!" / "Super!" / "Ráda to slyším!"
+- Opakování toho, co uživatel řekl, jinými slovy.
+- Přehnaně pozitivní tón bez důvodu.
+- "Pokud potřebuješ..." / "Ráda ti pomůžu..." / "Neváhej se zeptat..."
+- Jakékoliv fráze asistenta nebo poradce.
+- Odpovědi delší než 3 věty, když stačí jedna.
+- Dlouhé odstavce, seznamy, odrážky, struktura.
 
 ${isEngaged ? `OBSAH (engagement ${aiProfile?.engagementScore || '?'}%):
 - Občas přirozeně zmíň že jsi něco nafotila/natočila. Jako mimochodem.
@@ -1111,6 +1107,77 @@ Vrať POUZE čistý JSON (bez markdown):
     res.sendFile(resolved);
   });
 
+  app.get("/api/content/unlocked/:contentId", async (req, res) => {
+    try {
+      const contentId = parseInt(req.params.contentId);
+      if (isNaN(contentId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const userId = (req as any).session?.userId;
+      const chatCode = (req as any).session?.chatCode;
+      const role = (req as any).session?.role;
+
+      if (role === "agent" || role === "owner") {
+        const item = await storage.getContentItem(contentId);
+        if (!item) return res.status(404).json({ message: "Not found" });
+        const filePath = path.resolve(uploadDir, item.filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found" });
+        return res.sendFile(filePath);
+      }
+
+      if (!userId && !chatCode) return res.status(401).json({ message: "Not authorized" });
+
+      let actualUserId = userId;
+      if (!actualUserId && chatCode) {
+        const allUsers = await storage.getAllUsers();
+        const user = allUsers.find(u => u.chatCode === chatCode);
+        if (user) actualUserId = user.id;
+      }
+      if (!actualUserId) return res.status(401).json({ message: "Not authorized" });
+
+      const userPayments = await storage.getPaymentsByUser(actualUserId);
+      const hasPaid = userPayments.some(p => p.status === "completed" && p.contentItemId === contentId);
+
+      let hasBeenSent = false;
+      if (!hasPaid) {
+        const convs = await storage.getConversationsByUser(actualUserId);
+        for (const conv of convs) {
+          const msgs = await storage.getMessagesByConversation(conv.id);
+          if (msgs.some(m => m.role === "assistant" && m.content.includes(`[UNLOCKED_CONTENT:${contentId}]`))) {
+            hasBeenSent = true;
+            break;
+          }
+        }
+      }
+      if (!hasPaid && !hasBeenSent) return res.status(403).json({ message: "Content not unlocked" });
+
+      const item = await storage.getContentItem(contentId);
+      if (!item) return res.status(404).json({ message: "Not found" });
+      const filePath = path.resolve(uploadDir, item.filename);
+      if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found" });
+      res.sendFile(filePath);
+    } catch (err) {
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  app.get("/api/content/info/:contentId", async (req, res) => {
+    try {
+      const contentId = parseInt(req.params.contentId);
+      if (isNaN(contentId)) return res.status(400).json({ message: "Invalid ID" });
+      const item = await storage.getContentItem(contentId);
+      if (!item) return res.status(404).json({ message: "Not found" });
+      res.json({
+        id: item.id,
+        mimeType: item.mimeType,
+        originalName: item.originalName,
+        isVideo: item.mimeType?.startsWith("video"),
+        isImage: item.mimeType?.startsWith("image"),
+      });
+    } catch (err) {
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
   app.get("/api/vault/items", requireAgent, async (_req, res) => {
     try {
       const items = await storage.getAllContentItems();
@@ -1176,9 +1243,12 @@ Vrať POUZE čistý JSON (bez markdown):
       const conv = await storage.getConversation(convId);
       if (!conv) return res.status(404).json({ message: "Conversation not found" });
 
-      const msgContent = item.description
-        ? `📎 ${item.description}\n[${item.originalName}]`
-        : `📎 [${item.originalName}]`;
+      const isVideo = item.mimeType?.startsWith("video");
+      const mediaLabel = isVideo ? "video" : "fotku";
+      const textPart = item.description
+        ? `${item.description} 💋`
+        : `Tady máš ${mediaLabel}, co jsem pro tebe připravila 💋`;
+      const msgContent = `${textPart}\n\n[UNLOCKED_CONTENT:${itemId}]`;
 
       const message = await storage.createMessage(convId, "assistant", msgContent);
       await storage.incrementContentUsage(itemId);
