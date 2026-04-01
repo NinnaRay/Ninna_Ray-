@@ -27,6 +27,10 @@ interface LearningData {
   bestTimings: Record<string, { sent: number; responded: number; rate: number }>;
   avgResponseTime: number;
   lastUpdated: string;
+  sellConversionRate: number;
+  avgRevenuePerSell: number;
+  bestSellingPrice: number;
+  directives: string[];
 }
 
 let globalLearnings: LearningData = {
@@ -37,6 +41,10 @@ let globalLearnings: LearningData = {
   bestTimings: {},
   avgResponseTime: 0,
   lastUpdated: new Date().toISOString(),
+  sellConversionRate: 0,
+  avgRevenuePerSell: 0,
+  bestSellingPrice: 0,
+  directives: [],
 };
 
 function canSendToUser(userId: number): boolean {
@@ -173,14 +181,39 @@ Cenový rozsah: ${completedPayments.length > 0 ? `${Math.min(...completedPayment
 Zatím žádné nákupy.
 `;
 
+    let marketDirectives = "";
+    try {
+      const intel = await getMarketIntelligence();
+      const highPriorityRecs = intel.recommendations.filter(r => r.priority === "high");
+      if (highPriorityRecs.length > 0 || intel.trendScore !== 0) {
+        marketDirectives = `
+═══ TRŽNÍ INTELLIGENCE — PŘÍKAZY K ČINU ═══
+Trend skóre: ${intel.trendScore > 0 ? "↑ ROSTOUCÍ" : intel.trendScore < 0 ? "↓ KLESAJÍCÍ — reaguj!" : "→ STABILNÍ"}
+Konverze: ${intel.internalMetrics.conversionRate}% | Celkové tržby: ${intel.internalMetrics.totalRevenue} Kč | Transakcí: ${intel.internalMetrics.totalTransactions}
+${intel.internalMetrics.bestSellingPriceRange ? `Nejúspěšnější cenový rozsah: ${intel.internalMetrics.bestSellingPriceRange.min}-${intel.internalMetrics.bestSellingPriceRange.max} Kč` : ""}
+Segmenty: ${intel.internalMetrics.userSegments.highSpenders} VIP, ${intel.internalMetrics.userSegments.midSpenders} střed, ${intel.internalMetrics.userSegments.lowSpenders} low, ${intel.internalMetrics.userSegments.nonBuyers} nekupujících
+
+STRATEGICKÉ PŘÍKAZY (řiď se jimi):
+${intel.recommendations.map(r => `  ${r.priority === "high" ? "⚠️" : "→"} [${r.type}] ${r.title}: ${r.description}`).join("\n")}
+`;
+      }
+    } catch (e) {
+      console.error("[AI Manager] market intel error:", e);
+    }
+
     const learningContext = globalLearnings.totalSent > 0 ? `
-═══ GLOBÁLNÍ LEARNING DATA (self-improving) ═══
-Celkový response rate: ${globalLearnings.responseRate}% (${globalLearnings.totalResponded}/${globalLearnings.totalSent})
+═══ SELF-LEARNING DATA — ZÁVAZNÉ DIREKTIVY ═══
+Response rate: ${globalLearnings.responseRate}% (${globalLearnings.totalResponded}/${globalLearnings.totalSent})
 Průměrný čas odpovědi: ${globalLearnings.avgResponseTime} min
-Nejlepší typy zpráv: ${Object.entries(globalLearnings.bestPurposes).sort((a, b) => b[1].rate - a[1].rate).map(([k, v]) => `${k}=${v.rate}%`).join(", ")}
-Nejlepší timing: ${Object.entries(globalLearnings.bestTimings).sort((a, b) => b[1].rate - a[1].rate).map(([k, v]) => `${k}=${v.rate}%`).join(", ")}
-INSTRUKCE: Používej typy zpráv s vysokým response rate. Vyhni se typům s nízkým rate. Přizpůsob timing podle dat.
-` : "";
+Sell konverze: ${globalLearnings.sellConversionRate}% | Průměrný výdělek per sell: ${globalLearnings.avgRevenuePerSell} Kč
+Nejúspěšnější cenový bod: ${globalLearnings.bestSellingPrice > 0 ? globalLearnings.bestSellingPrice + " Kč" : "zatím neznámý"}
+
+Typy zpráv (response rate): ${Object.entries(globalLearnings.bestPurposes).sort((a, b) => b[1].rate - a[1].rate).map(([k, v]) => `${k}=${v.rate}%`).join(", ")}
+Timing (response rate): ${Object.entries(globalLearnings.bestTimings).sort((a, b) => b[1].rate - a[1].rate).map(([k, v]) => `${k}=${v.rate}%`).join(", ")}
+
+${globalLearnings.directives.length > 0 ? `DIREKTIVY — POVINNĚ SE JIMI ŘIĎ:
+${globalLearnings.directives.map(d => `  ★ ${d}`).join("\n")}` : ""}
+${marketDirectives}` : marketDirectives;
 
     const userMsgCount = sorted.filter(m => m.role === "user").length;
     const assistantMsgCount = sorted.filter(m => m.role === "assistant").length;
@@ -508,7 +541,24 @@ async function executeAction(actionId: number, userId: number, message: string, 
       return false;
     }
 
-    let finalMessage = message;
+    const INTERNAL_LEAK_PATTERNS = [
+      /response\s*rate/i, /konverz[eí]/i, /sell\s*conv/i, /tržb[yí]/i,
+      /revenue/i, /direktivy/i, /self.?learn/i, /market.*intelli/i,
+      /cenov[ýé]\s*bod/i, /segmenty?:/i, /VIP.*střed.*low/i,
+      /benchmark/i, /conversion/i, /strategick/i,
+    ];
+    let cleanMessage = message;
+    for (const pattern of INTERNAL_LEAK_PATTERNS) {
+      if (pattern.test(cleanMessage)) {
+        log("content_guardrail", `Action #${actionId} — odstraněn interní obsah (${pattern.source})`);
+        cleanMessage = cleanMessage.replace(new RegExp(`[^.!?]*${pattern.source}[^.!?]*[.!?]?`, "gi"), "").trim();
+      }
+    }
+    if (cleanMessage.length < 10) {
+      log("content_guardrail_blocked", `Action #${actionId} — zpráva po filtraci příliš krátká, blokováno`);
+      return false;
+    }
+    let finalMessage = cleanMessage;
 
     if (photoId && price && price >= 199) {
       const checkoutUrl = await generateStripeCheckoutUrl(userId, photoId, price);
@@ -804,39 +854,23 @@ async function selfLearn() {
     }
 
     const total = gotResponse + noResponse;
+    const responseRate = total > 0 ? Math.round((gotResponse / total) * 100) : 0;
+    const avgResponseTime = responseTimes.length > 0 ? Math.round(responseTimes.reduce((s, t) => s + t, 0) / responseTimes.length / 60000) : 0;
+
+    const bestPurposes: Record<string, { sent: number; responded: number; rate: number }> = {};
+    for (const [p, s] of Object.entries(purposeStats)) {
+      bestPurposes[p] = { ...s, rate: s.sent > 0 ? Math.round((s.responded / s.sent) * 100) : 0 };
+    }
+
+    const bestTimings: Record<string, { sent: number; responded: number; rate: number }> = {};
+    for (const [t, s] of Object.entries(timingStats)) {
+      bestTimings[t] = { ...s, rate: s.sent > 0 ? Math.round((s.responded / s.sent) * 100) : 0 };
+    }
+
     if (total > 0) {
-      const responseRate = Math.round((gotResponse / total) * 100);
-      const avgResponseTime = responseTimes.length > 0 ? Math.round(responseTimes.reduce((s, t) => s + t, 0) / responseTimes.length / 60000) : 0;
-
-      const bestPurposes: Record<string, { sent: number; responded: number; rate: number }> = {};
-      for (const [p, s] of Object.entries(purposeStats)) {
-        bestPurposes[p] = { ...s, rate: s.sent > 0 ? Math.round((s.responded / s.sent) * 100) : 0 };
-      }
-
-      const bestTimings: Record<string, { sent: number; responded: number; rate: number }> = {};
-      for (const [t, s] of Object.entries(timingStats)) {
-        bestTimings[t] = { ...s, rate: s.sent > 0 ? Math.round((s.responded / s.sent) * 100) : 0 };
-      }
-
-      globalLearnings = {
-        totalSent: total,
-        totalResponded: gotResponse,
-        responseRate,
-        bestPurposes,
-        bestTimings,
-        avgResponseTime,
-        lastUpdated: new Date().toISOString(),
-      };
-
-      const bestPurpose = Object.entries(bestPurposes).sort((a, b) => b[1].rate - a[1].rate)[0];
-      const worstPurpose = Object.entries(bestPurposes).sort((a, b) => a[1].rate - b[1].rate)[0];
-
       log("self_learn", `Response rate: ${responseRate}% (${gotResponse}/${total}) | Avg response: ${avgResponseTime} min`);
-      if (bestPurpose) log("self_learn_best", `Nejlepší typ: "${bestPurpose[0]}" (${bestPurpose[1].rate}%)`);
-      if (worstPurpose && worstPurpose[1].rate < 15 && worstPurpose[1].sent >= 3) {
-        log("self_learn_warning", `Slabý typ: "${worstPurpose[0]}" (${worstPurpose[1].rate}%) — zvážit změnu přístupu`);
-      }
-
+      const topPurpose = Object.entries(bestPurposes).sort((a, b) => b[1].rate - a[1].rate)[0];
+      if (topPurpose) log("self_learn_best", `Nejlepší typ: "${topPurpose[0]}" (${topPurpose[1].rate}%)`);
       if (responseRate < 20 && total >= 5) {
         log("self_learn_alert", `Nízký celkový response rate (${responseRate}%) — engine automaticky upraví strategii`);
       }
@@ -844,9 +878,97 @@ async function selfLearn() {
 
     const allPayments = await storage.getAllPayments();
     const completedPayments = allPayments.filter(p => p.status === "completed");
+    const sellActions = doneActions.filter(a => a.purpose === "sell");
+    const sellsWithPayment = sellActions.filter(a => {
+      const execTime = new Date(a.executedAt!).getTime();
+      const windowEnd = execTime + 24 * 60 * 60 * 1000;
+      return completedPayments.some(p => {
+        const payTime = new Date(p.createdAt).getTime();
+        return p.userId === a.userId && payTime > execTime && payTime < windowEnd;
+      });
+    });
+    const sellConversionRate = sellActions.length > 0 ? Math.round((sellsWithPayment.length / sellActions.length) * 100) : 0;
+    const sellRevenue = sellsWithPayment.length > 0
+      ? sellsWithPayment.reduce((sum, action) => {
+          const execTime = new Date(action.executedAt!).getTime();
+          const windowEnd = execTime + 24 * 60 * 60 * 1000;
+          const matchingPayment = completedPayments.find(p =>
+            p.userId === action.userId && new Date(p.createdAt).getTime() > execTime && new Date(p.createdAt).getTime() < windowEnd
+          );
+          return sum + (matchingPayment ? matchingPayment.amount / 100 : 0);
+        }, 0)
+      : 0;
+    const avgRevenuePerSell = sellsWithPayment.length > 0 ? Math.round(sellRevenue / sellsWithPayment.length) : 0;
+
+    const priceCounts: Record<number, number> = {};
+    for (const p of completedPayments) {
+      const bucket = Math.round(p.amount / 100 / 50) * 50;
+      priceCounts[bucket] = (priceCounts[bucket] || 0) + 1;
+    }
+    const bestSellingPrice = parseInt(Object.entries(priceCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "0");
+
+    const directives: string[] = [];
+
+    if (responseRate < 20 && total >= 5) {
+      directives.push("KRITICKÉ: Response rate pod 20%. ZMĚŇ STYL komunikace — kratší zprávy, víc otázek, méně prodeje. Testuj jiné hooky.");
+    } else if (responseRate < 40 && total >= 5) {
+      directives.push("Response rate pod 40%. Přizpůsob tón — zkus být osobnější a méně formální.");
+    }
+
+    const bestPurpose = Object.entries(bestPurposes).sort((a, b) => b[1].rate - a[1].rate)[0];
+    const worstPurpose = Object.entries(bestPurposes).sort((a, b) => a[1].rate - b[1].rate)[0];
+    if (bestPurpose && bestPurpose[1].rate > 30) {
+      directives.push(`NEJVÍC FUNGUJE typ "${bestPurpose[0]}" (${bestPurpose[1].rate}% response). POUŽÍVEJ HO VÍCKRÁT.`);
+    }
+    if (worstPurpose && worstPurpose[1].rate < 15 && worstPurpose[1].sent >= 3) {
+      directives.push(`NEFUNGUJE typ "${worstPurpose[0]}" (${worstPurpose[1].rate}% response). PŘESTAŇ ho používat nebo ho úplně změň.`);
+    }
+
+    const bestTiming = Object.entries(bestTimings).sort((a, b) => b[1].rate - a[1].rate)[0];
+    if (bestTiming && bestTiming[1].rate > 30) {
+      directives.push(`NEJLEPŠÍ TIMING: "${bestTiming[0]}" (${bestTiming[1].rate}% response). PREFERUJ tento timing u nových akcí.`);
+    }
+
+    if (sellConversionRate > 0 && sellConversionRate < 10 && sellActions.length >= 3) {
+      directives.push(`SELL konverze jen ${sellConversionRate}%. Příliš agresivní prodej. VÍC BUDUJ VZTAH před nabídkou. Delší buildup, méně přímých sellů.`);
+    } else if (sellConversionRate >= 30) {
+      directives.push(`SELL konverze ${sellConversionRate}% — VÝBORNÉ. Pokračuj ve stejném stylu, zvaž zvýšení cen o 10-20%.`);
+    }
+
+    if (bestSellingPrice > 0) {
+      directives.push(`NEJÚSPĚŠNĚJŠÍ CENOVÝ BOD: ~${bestSellingPrice} Kč. Soustřeď nabídky kolem této ceny.`);
+    }
+
     if (completedPayments.length > 0) {
       const totalRevenue = completedPayments.reduce((s, p) => s + p.amount, 0) / 100;
-      log("self_learn_revenue", `Celkové tržby: ${totalRevenue} Kč z ${completedPayments.length} plateb`);
+      const avgTicket = Math.round(totalRevenue / completedPayments.length);
+      if (avgTicket < 200) {
+        directives.push("Průměrný ticket pod 200 Kč — ZVYŠ CENY. Minimální unlock 199 Kč.");
+      }
+    }
+
+    const nonBuyers = (await storage.getAllUsers()).filter(u => u.chatCode && !completedPayments.some(p => p.userId === u.id));
+    if (nonBuyers.length > 0 && completedPayments.length >= 1) {
+      directives.push(`${nonBuyers.length} zákazník(ů) zatím nekoupil(o). Zaměř se na ně: hint→lock→sell flow, nízká vstupní cena.`);
+    }
+
+    globalLearnings = {
+      totalSent: total,
+      totalResponded: gotResponse,
+      responseRate,
+      bestPurposes,
+      bestTimings,
+      avgResponseTime,
+      lastUpdated: new Date().toISOString(),
+      sellConversionRate,
+      avgRevenuePerSell,
+      bestSellingPrice,
+      directives,
+    };
+
+    log("self_learn", `Response rate: ${responseRate}% (${gotResponse}/${total}) | Sell conv: ${sellConversionRate}% | Avg revenue/sell: ${avgRevenuePerSell} Kč`);
+    if (directives.length > 0) {
+      log("self_learn_directives", directives.join(" | "));
     }
   } catch (err) {
     log("self_learn_error", (err as Error).message);
