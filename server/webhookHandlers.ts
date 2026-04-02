@@ -41,6 +41,26 @@ export class WebhookHandlers {
             console.log(`[Webhook] Payment #${payment.id} completed successfully`);
 
             if (payment.userId) {
+              // ── E-Bot: Auto-unlock avatar assets ───────────────────────
+              if (payment.contentItemId) {
+                try {
+                  const unlockedCount = await storage.unlockAssetsForPayment(
+                    payment.userId,
+                    payment.contentItemId,
+                    payment.id
+                  );
+                  if (unlockedCount > 0) {
+                    await storage.addManagerLog(
+                      'assets_unlocked',
+                      `${unlockedCount} avatar assetů odemčeno pro uživatele #${payment.userId} (obsah #${payment.contentItemId})`
+                    );
+                  }
+                } catch (unlockErr: any) {
+                  console.error('[Webhook] Asset unlock error:', unlockErr.message);
+                }
+              }
+
+              // ── Potvrzovací zpráva do chatu ────────────────────────────
               const convs = await storage.getConversationsByUser(payment.userId);
               if (convs.length > 0) {
                 const amountCzk = Math.round(payment.amount / 100);
@@ -49,7 +69,7 @@ export class WebhookHandlers {
                   const item = await storage.getContentItem(payment.contentItemId);
                   if (item) {
                     const isVideo = item.mimeType?.startsWith("video");
-                    confirmMsg = `✅ Platba ${amountCzk} Kč přijata! Tady máš svůj exkluzivní ${isVideo ? "video" : "obsah"} 💋🔓\n\n[UNLOCKED_CONTENT:${payment.contentItemId}]`;
+                    confirmMsg = `✅ Platba ${amountCzk} Kč přijata! Tady máš svůj exkluzivní ${isVideo ? "video" : "obsah"} 💋🔓\n\n[UNLOCKED_CONTENT:${payment.contentItemId}]\n\n✨ Tohle se ti odemklo i v šatníku — mrkni na svojí Ninnu 😏`;
                   }
                 }
                 await storage.createMessage(convs[0].id, "assistant", confirmMsg);
@@ -80,12 +100,17 @@ export class WebhookHandlers {
             const user = allUsers.find(u => u.stripeCustomerId === customerId);
             if (user) {
               await storage.updateUser(user.id, { platform: "vip_subscriber" } as any);
+
+              // ── E-Bot: Aktivovat bot pro subscribera ─────────────────
+              await storage.enableBot(user.id);
+
               console.log(`[Webhook] Subscription activated for user #${user.id} (${user.name})`);
-              await storage.addManagerLog("subscription_activated", `Předplatné aktivováno pro ${user.name} (${sub.status})`);
+              await storage.addManagerLog("subscription_activated", `Předplatné aktivováno pro ${user.name} (${sub.status}), E-Bot odemčen`);
+
               const convs = await storage.getConversationsByUser(user.id);
               if (convs.length > 0) {
                 await storage.createMessage(convs[0].id, "assistant",
-                  `✅ Tvoje předplatné je aktivní! Jsem ráda, že jsi tu. 💋 Teď ti odemknu obsah přímo tady v chatu.`
+                  `✅ Tvoje předplatné je aktivní! Jsem ráda, že jsi tu. 💋\n\n🤖 Odemkl ses přístup k mému **E-Botu** — teď mě najdeš v horním menu chatu. Tam si mě můžeš přizpůsobit podle svého vkusu… zatím mám jen základní outfit 😏`
                 );
               }
             }
@@ -103,7 +128,9 @@ export class WebhookHandlers {
           const allUsers = await storage.getAllUsers();
           const user = allUsers.find(u => u.stripeCustomerId === customerId);
           if (user) {
-            await storage.addManagerLog("subscription_cancelled", `Předplatné zrušeno pro ${user.name}`);
+            // ── E-Bot: Deaktivovat bot (progress zůstane uložen) ─────
+            await storage.disableBot(user.id);
+            await storage.addManagerLog("subscription_cancelled", `Předplatné zrušeno pro ${user.name}, E-Bot uzamčen (progress uložen)`);
           }
         } catch (err: any) {
           console.error('[Webhook] subscription.deleted error:', err.message);

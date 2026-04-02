@@ -1,6 +1,6 @@
-import { users, conversations, messages, contentItems, managerActions, managerLog, payments, avatarElements, avatarInstances, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem, type ManagerAction, type ManagerLog, type Payment, type InsertPayment, type AvatarElement, type InsertAvatarElement, type AvatarInstance, type InsertAvatarInstance } from "@shared/schema";
+import { users, conversations, messages, contentItems, managerActions, managerLog, payments, avatarElements, avatarInstances, userUnlockedAssets, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem, type ManagerAction, type ManagerLog, type Payment, type InsertPayment, type AvatarElement, type InsertAvatarElement, type AvatarInstance, type InsertAvatarInstance, type UserUnlockedAsset } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, gte, sql } from "drizzle-orm";
+import { eq, desc, gte, sql, and, inArray } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -50,6 +50,15 @@ export interface IStorage {
   deleteAvatarElement(id: number): Promise<void>;
   getAllAvatarElements(): Promise<AvatarElement[]>;
   updateAvatarLastInteraction(userId: number): Promise<void>;
+
+  // ─── E-Bot: Unlocked Assets & Bot State ───────────────────────────────────
+  isUserSubscribed(userId: number): Promise<boolean>;
+  enableBot(userId: number): Promise<void>;
+  disableBot(userId: number): Promise<void>;
+  getUserUnlockedAssetIds(userId: number): Promise<number[]>;
+  unlockAssetsForPayment(userId: number, contentItemId: number, paymentId: number): Promise<number>;
+  getBotWardrobe(userId: number): Promise<{ unlocked: AvatarElement[]; locked: AvatarElement[] }>;
+  getUserBotContext(userId: number): Promise<{ hasBot: boolean; unlockedCount: number; totalCount: number; outfitNames: string[] }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -77,14 +86,14 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (user) {
       await db.update(users)
-        .set({ messageCount: user.messageCount + 1 })
+        .set({ messageCount: (user.messageCount || 0) + 1 })
         .where(eq(users.id, userId));
     }
   }
 
   async getConversation(id: number): Promise<Conversation | undefined> {
-    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, id));
-    return conversation;
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+    return conv;
   }
 
   async getConversationsByUser(userId: number): Promise<Conversation[]> {
@@ -98,8 +107,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createConversation(userId: number, title: string): Promise<Conversation> {
-    const [conversation] = await db.insert(conversations).values({ userId, title }).returning();
-    return conversation;
+    const [conv] = await db.insert(conversations).values({ userId, title }).returning();
+    return conv;
   }
 
   async deleteConversation(id: number): Promise<void> {
@@ -109,7 +118,7 @@ export class DatabaseStorage implements IStorage {
 
   async setManualMode(conversationId: number, manual: boolean, agentName?: string): Promise<void> {
     await db.update(conversations)
-      .set({ manualMode: manual, assignedAgent: agentName ?? null })
+      .set({ manualMode: manual, assignedAgent: agentName || null })
       .where(eq(conversations.id, conversationId));
   }
 
@@ -123,20 +132,20 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(messages).orderBy(desc(messages.createdAt));
   }
 
+  async createMessage(conversationId: number, role: string, content: string): Promise<Message> {
+    const [message] = await db.insert(messages).values({ conversationId, role, content }).returning();
+    return message;
+  }
+
   async updateAiProfile(userId: number, profile: Record<string, any>): Promise<void> {
     await db.update(users)
       .set({ aiProfile: profile, aiProfileUpdatedAt: new Date() })
       .where(eq(users.id, userId));
   }
 
-  async createMessage(conversationId: number, role: string, content: string): Promise<Message> {
-    const [message] = await db.insert(messages).values({ conversationId, role, content }).returning();
-    return message;
-  }
-
   async createContentItem(item: InsertContentItem): Promise<ContentItem> {
-    const [ci] = await db.insert(contentItems).values(item).returning();
-    return ci;
+    const [contentItem] = await db.insert(contentItems).values(item).returning();
+    return contentItem;
   }
 
   async getAllContentItems(): Promise<ContentItem[]> {
@@ -144,8 +153,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getContentItem(id: number): Promise<ContentItem | undefined> {
-    const [ci] = await db.select().from(contentItems).where(eq(contentItems.id, id));
-    return ci;
+    const [item] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+    return item;
   }
 
   async deleteContentItem(id: number): Promise<void> {
@@ -153,9 +162,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async incrementContentUsage(id: number): Promise<void> {
-    const ci = await this.getContentItem(id);
-    if (ci) {
-      await db.update(contentItems).set({ timesUsed: ci.timesUsed + 1 }).where(eq(contentItems.id, id));
+    const [item] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+    if (item) {
+      await db.update(contentItems)
+        .set({ timesUsed: (item.timesUsed || 0) + 1 })
+        .where(eq(contentItems.id, id));
     }
   }
 
@@ -163,20 +174,22 @@ export class DatabaseStorage implements IStorage {
     const [action] = await db.insert(managerActions).values({
       userId: data.userId,
       type: data.type,
-      message: data.message || null,
-      photoId: data.photoId || null,
-      price: data.price || null,
-      purpose: data.purpose || null,
-      timing: data.timing || null,
+      message: data.message,
+      photoId: data.photoId,
+      price: data.price,
+      purpose: data.purpose,
+      timing: data.timing,
     }).returning();
     return action;
   }
 
   async getManagerActions(since?: Date): Promise<ManagerAction[]> {
     if (since) {
-      return db.select().from(managerActions).where(gte(managerActions.createdAt, since)).orderBy(desc(managerActions.createdAt));
+      return db.select().from(managerActions)
+        .where(gte(managerActions.createdAt, since))
+        .orderBy(desc(managerActions.createdAt));
     }
-    return db.select().from(managerActions).orderBy(desc(managerActions.createdAt)).limit(200);
+    return db.select().from(managerActions).orderBy(desc(managerActions.createdAt));
   }
 
   async updateManagerAction(id: number, updates: Partial<{ status: string; result: string; executedAt: Date }>): Promise<void> {
@@ -184,11 +197,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addManagerLog(event: string, detail?: string): Promise<void> {
-    await db.insert(managerLog).values({ event, detail: detail || null });
+    await db.insert(managerLog).values({ event, detail });
   }
 
-  async getManagerLogs(limit = 50): Promise<ManagerLog[]> {
-    return db.select().from(managerLog).orderBy(desc(managerLog.createdAt)).limit(limit);
+  async getManagerLogs(limit = 100): Promise<ManagerLog[]> {
+    return db.select().from(managerLog)
+      .orderBy(desc(managerLog.createdAt))
+      .limit(limit);
   }
 
   async updateUser(id: number, updates: Partial<{ platform: string }>): Promise<void> {
@@ -209,6 +224,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(conversations).where(eq(conversations.userId, userId));
     await db.delete(managerActions).where(eq(managerActions.userId, userId));
     await db.delete(payments).where(eq(payments.userId, userId));
+    await db.delete(userUnlockedAssets).where(eq(userUnlockedAssets.userId, userId));
     await db.delete(avatarInstances).where(eq(avatarInstances.userId, userId));
     await db.delete(users).where(eq(users.id, userId));
   }
@@ -260,6 +276,7 @@ export class DatabaseStorage implements IStorage {
       visualConfig: {},
       personaName: "Ninna",
       capabilityLevel: 1,
+      botEnabled: false,
     }).returning();
     return instance;
   }
@@ -299,17 +316,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAvatarElementsForUser(userId: number): Promise<AvatarElement[]> {
-    // Vrátit elementy z fotek, které zákazník zakoupil (payments completed)
-    const userPayments = await db.select().from(payments)
-      .where(eq(payments.userId, userId));
-    const paidContentIds = userPayments
-      .filter(p => p.status === "completed" && p.contentItemId)
-      .map(p => p.contentItemId as number);
-
-    if (paidContentIds.length === 0) return [];
-
-    const elements = await db.select().from(avatarElements);
-    return elements.filter(e => e.contentItemId && paidContentIds.includes(e.contentItemId));
+    // Vrátí odemčené assety přes userUnlockedAssets tabulku
+    const unlockedIds = await this.getUserUnlockedAssetIds(userId);
+    if (unlockedIds.length === 0) return [];
+    return db.select().from(avatarElements)
+      .where(inArray(avatarElements.id, unlockedIds));
   }
 
   async createAvatarElement(data: InsertAvatarElement): Promise<AvatarElement> {
@@ -318,6 +329,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAvatarElement(id: number): Promise<void> {
+    await db.delete(userUnlockedAssets).where(eq(userUnlockedAssets.avatarElementId, id));
     await db.delete(avatarElements).where(eq(avatarElements.id, id));
   }
 
@@ -329,6 +341,103 @@ export class DatabaseStorage implements IStorage {
     await db.update(avatarInstances)
       .set({ lastInteraction: new Date(), updatedAt: new Date() })
       .where(eq(avatarInstances.userId, userId));
+  }
+
+  // ─── E-Bot: Unlocked Assets & Bot State ───────────────────────────────────
+
+  async isUserSubscribed(userId: number): Promise<boolean> {
+    const user = await this.getUser(userId);
+    if (!user) return false;
+    return user.platform === "vip_subscriber" || user.isPremium === true;
+  }
+
+  async enableBot(userId: number): Promise<void> {
+    let instance = await this.getAvatarInstance(userId);
+    if (!instance) {
+      instance = await this.createAvatarInstance(userId);
+    }
+    await db.update(avatarInstances)
+      .set({ botEnabled: true, updatedAt: new Date() })
+      .where(eq(avatarInstances.userId, userId));
+    console.log(`[E-Bot] Bot enabled for user #${userId}`);
+  }
+
+  async disableBot(userId: number): Promise<void> {
+    await db.update(avatarInstances)
+      .set({ botEnabled: false, updatedAt: new Date() })
+      .where(eq(avatarInstances.userId, userId));
+    console.log(`[E-Bot] Bot disabled for user #${userId}`);
+  }
+
+  async getUserUnlockedAssetIds(userId: number): Promise<number[]> {
+    const rows = await db.select()
+      .from(userUnlockedAssets)
+      .where(eq(userUnlockedAssets.userId, userId));
+    return rows.map(r => r.avatarElementId);
+  }
+
+  async unlockAssetsForPayment(userId: number, contentItemId: number, paymentId: number): Promise<number> {
+    // Najdi všechny avatar elementy pro tento content item
+    const elements = await db.select().from(avatarElements)
+      .where(eq(avatarElements.contentItemId, contentItemId));
+
+    if (elements.length === 0) return 0;
+
+    // Zjisti co už user má odemčené (aby neduplikoval)
+    const alreadyUnlocked = await this.getUserUnlockedAssetIds(userId);
+    const toUnlock = elements.filter(e => !alreadyUnlocked.includes(e.id));
+
+    if (toUnlock.length === 0) return 0;
+
+    // Vlož záznamy o odemčení
+    for (const element of toUnlock) {
+      await db.insert(userUnlockedAssets).values({
+        userId,
+        avatarElementId: element.id,
+        paymentId,
+      });
+    }
+
+    console.log(`[E-Bot] Unlocked ${toUnlock.length} avatar assets for user #${userId} (content #${contentItemId})`);
+    return toUnlock.length;
+  }
+
+  async getBotWardrobe(userId: number): Promise<{ unlocked: AvatarElement[]; locked: AvatarElement[] }> {
+    const allElements = await db.select().from(avatarElements).orderBy(avatarElements.elementType, avatarElements.createdAt);
+    const unlockedIds = await this.getUserUnlockedAssetIds(userId);
+
+    const unlocked: AvatarElement[] = [];
+    const locked: AvatarElement[] = [];
+
+    for (const el of allElements) {
+      if (unlockedIds.includes(el.id)) {
+        unlocked.push(el);
+      } else {
+        locked.push(el);
+      }
+    }
+
+    return { unlocked, locked };
+  }
+
+  async getUserBotContext(userId: number): Promise<{ hasBot: boolean; unlockedCount: number; totalCount: number; outfitNames: string[] }> {
+    const instance = await this.getAvatarInstance(userId);
+    const hasBot = !!(instance?.botEnabled);
+    const { unlocked } = await this.getBotWardrobe(userId);
+    const allElements = await this.getAllAvatarElements();
+
+    const config = (instance?.visualConfig as Record<string, any>) || {};
+    const outfitNames: string[] = [];
+    if (config.outfit_name) outfitNames.push(config.outfit_name);
+    if (config.hair_name) outfitNames.push(config.hair_name);
+    if (config.accessory_name) outfitNames.push(config.accessory_name);
+
+    return {
+      hasBot,
+      unlockedCount: unlocked.length,
+      totalCount: allElements.length,
+      outfitNames,
+    };
   }
 }
 

@@ -306,6 +306,18 @@ DOSTUPNÝ OBSAH (použij ID při prodeji):
 FOTKY: ${photos.map(i => `#${i.id}${i.description ? ` (${i.description.substring(0, 30)})` : ""}`).join(", ")}
 VIDEA: ${videos.map(i => `#${i.id}${i.description ? ` (${i.description.substring(0, 30)})` : ""}`).join(", ")}` : "";
 
+      // E-Bot context — Ninna ví co user vlastní v šatníku
+      const botCtx = user?.id ? await storage.getUserBotContext(user.id).catch(() => null) : null;
+      const botContext = botCtx ? `
+E-BOT ŠATNÍK (co user odemkl v šatníku Ninny):
+- Má předplatné / E-Bot: ${botCtx.hasBot ? "ANO" : "NE"}
+- Odemčeno assetů: ${botCtx.unlockedCount}/${botCtx.totalCount}
+- Aktivní outfity: ${botCtx.outfitNames.length > 0 ? botCtx.outfitNames.join(", ") : "výchozí (spodní prádlo)"}
+${botCtx.hasBot && botCtx.unlockedCount === 0 ? "- TIP: Nabídni mu koupit fotku, která odemkne outfit pro bota — ukáže zájem." : ""}
+${botCtx.hasBot && botCtx.unlockedCount > 0 ? `- Můžeš zmínit konkrétní outfit: "${botCtx.outfitNames[0]}" — vytvoří osobní spojení.` : ""}
+${!botCtx.hasBot ? "- Nemá předplatné → zmíni E-Bot jako bonus k předplatnému." : ""}` : "";
+
+
       const suggestedPhotoPrice = aiProfile?.suggestedPrice || 249;
       const videoPrice = Math.round(suggestedPhotoPrice * 1.8);
 
@@ -329,6 +341,7 @@ NEJSI AI. NEJSI asistent. Jsi reálná osoba co zrovna kouká na mobil.
 Píšeš s: '${userName}' (vokativ!)
 ${profileContext}${purchaseContext}${pricingContext}
 ${vaultContext}
+${botContext}
 
 ══════════════════════════════════════════════════════════════════
 RELATIONSHIP-FIRST PSYCHOLOGICKÁ STRATEGIE (NEJDŮLEŽITĚJŠÍ)
@@ -2086,6 +2099,115 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
     } catch (err: any) {
       console.error("[Avatar] analyze-photo error:", err.message);
       res.status(500).json({ message: "Chyba při analýze fotky: " + err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // E-BOT ROUTES — Ninna E-Bot ekosystém
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // GET /api/bot/status — stav E-Botu pro přihlášeného usera
+  app.get("/api/bot/status", async (req, res) => {
+    try {
+      const userId = req.session.userId;
+      if (!userId) return res.status(401).json({ message: "Nejsi přihlášen" });
+
+      const isSubscribed = await storage.isUserSubscribed(userId);
+      const instance = await storage.getAvatarInstance(userId);
+      const botEnabled = isSubscribed && !!(instance?.botEnabled);
+
+      const { unlocked, locked } = await storage.getBotWardrobe(userId);
+
+      res.json({
+        isSubscribed,
+        botEnabled,
+        unlockedCount: unlocked.length,
+        lockedCount: locked.length,
+        totalCount: unlocked.length + locked.length,
+      });
+    } catch (err: any) {
+      console.error("[Bot] status error:", err.message);
+      res.status(500).json({ message: "Chyba při načítání stavu bota" });
+    }
+  });
+
+  // GET /api/bot/wardrobe — šatník s locked/unlocked assety
+  app.get("/api/bot/wardrobe", async (req, res) => {
+    try {
+      const userId = req.session.userId;
+      if (!userId) return res.status(401).json({ message: "Nejsi přihlášen" });
+
+      const isSubscribed = await storage.isUserSubscribed(userId);
+      if (!isSubscribed) {
+        return res.status(403).json({ message: "E-Bot vyžaduje aktivní předplatné", requiresSubscription: true });
+      }
+
+      const { unlocked, locked } = await storage.getBotWardrobe(userId);
+      const instance = await storage.getAvatarInstance(userId);
+
+      res.json({
+        unlocked,
+        locked,
+        currentConfig: (instance?.visualConfig as Record<string, any>) || {},
+      });
+    } catch (err: any) {
+      console.error("[Bot] wardrobe error:", err.message);
+      res.status(500).json({ message: "Chyba při načítání šatníku" });
+    }
+  });
+
+  // GET /api/bot/ninna-comment — kontextuální komentář Ninny k šatníku usera
+  app.get("/api/bot/ninna-comment", async (req, res) => {
+    try {
+      const userId = req.session.userId;
+      if (!userId) return res.status(401).json({ message: "Nejsi přihlášen" });
+
+      const ctx = await storage.getUserBotContext(userId);
+      const { unlocked, locked } = await storage.getBotWardrobe(userId);
+
+      let comment = "";
+      let mood: "default" | "happy" | "teasing" | "upsell" = "default";
+
+      if (!ctx.hasBot) {
+        comment = "ještě jsem nezačala...";
+        mood = "default";
+      } else if (unlocked.length === 0) {
+        comment = "hej… jsem jen v základu 😏\nale mohl bys mě trochu vylepšit";
+        mood = "default";
+      } else if (unlocked.length <= 2) {
+        const name = unlocked[0]?.name || "tohle";
+        comment = `${name}... líbí se ti? 🙈\nmám toho víc, jestli chceš vidět`;
+        mood = "teasing";
+      } else if (unlocked.length <= 5) {
+        comment = `wow, to jsi rychlý 🔥\nale stále je co odemknout…`;
+        mood = "happy";
+      } else {
+        comment = `jsi tu docela štědrý miláčku 💋\nto nejlepší je pořád za zamčenou dveří 😈`;
+        mood = "upsell";
+      }
+
+      res.json({
+        comment,
+        mood,
+        unlockedCount: unlocked.length,
+        lockedCount: locked.length,
+        outfitNames: ctx.outfitNames,
+      });
+    } catch (err: any) {
+      console.error("[Bot] ninna-comment error:", err.message);
+      res.status(500).json({ comment: "...", mood: "default" });
+    }
+  });
+
+  // POST /api/bot/manual-enable — owner může ručně zapnout bot (pro testování)
+  app.post("/api/bot/manual-enable/:userId", requireOwner, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      await storage.enableBot(userId);
+      await storage.updateUser(userId, { platform: "vip_subscriber" } as any);
+      res.json({ message: "Bot aktivován", userId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 

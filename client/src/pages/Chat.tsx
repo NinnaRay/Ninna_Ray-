@@ -3,16 +3,23 @@ import { useChat } from "@/hooks/use-chat";
 import { ChatBubble } from "@/components/ChatBubble";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, LogOut, ChevronLeft, Crown, Mic, Loader2, Wand2 } from "lucide-react";
+import { Send, LogOut, ChevronLeft, Crown, Mic, Loader2, Wand2, Bot } from "lucide-react";
 import { useVoice } from "@/hooks/use-voice";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 
 import ninnaPhoto from "@assets/IMG_4700_1768775323977.jpeg";
 
 export default function Chat() {
   const [user, setUser] = useState<any>(null);
   const [, setLocation] = useLocation();
+
+  const { data: botStatus } = useQuery<{ isSubscribed: boolean; botEnabled: boolean; unlockedCount: number }>({
+    queryKey: ["/api/bot/status"],
+    enabled: !!user?.id,
+    retry: false,
+  });
   const { messages, sendMessage, isTyping, initConversation, activeConversationId } = useChat({ userId: user?.id });
   const [inputValue, setInputValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -82,16 +89,32 @@ export default function Chat() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-violet-400 hover:text-violet-300"
-            onClick={() => setLocation("/avatar")}
-            data-testid="button-avatar"
-            title="Virtual Twin Šatník"
-          >
-            <Wand2 className="w-5 h-5" />
-          </Button>
+          {botStatus?.isSubscribed ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-pink-400 hover:text-pink-300 relative"
+              onClick={() => setLocation("/bot")}
+              data-testid="button-ebot"
+              title="Ninna E-Bot"
+            >
+              <Bot className="w-5 h-5" />
+              {(botStatus?.unlockedCount ?? 0) > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-pink-500 rounded-full" />
+              )}
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-neutral-600 hover:text-neutral-400"
+              onClick={() => setLocation("/payment")}
+              data-testid="button-ebot-locked"
+              title="E-Bot — vyžaduje předplatné"
+            >
+              <Bot className="w-5 h-5" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
