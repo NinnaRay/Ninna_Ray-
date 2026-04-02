@@ -704,6 +704,7 @@ async function runFullScan() {
               type: "message",
               message: action.message,
               photoId: action.photoId || undefined,
+              price: action.price || undefined,
               purpose: action.purpose,
               timing: action.timing,
             });
@@ -736,7 +737,7 @@ async function executePendingBacklog() {
     for (const action of pending.reverse()) {
       if (enginePaused) { log("backlog_paused", `Pozastaveno po ${sent} akcích`); break; }
       if (!action.message || !action.userId) continue;
-      await executeAction(action.id, action.userId, action.message, action.photoId || undefined);
+      await executeAction(action.id, action.userId, action.message, action.photoId || undefined, action.price || undefined);
       sent++;
       await new Promise(r => setTimeout(r, 500));
     }
@@ -1165,6 +1166,7 @@ export async function triggerAnalysis(userId: number, userName: string) {
         type: "message",
         message: action.message,
         photoId: action.photoId || undefined,
+        price: action.price || undefined,
         purpose: action.purpose,
         timing: action.timing,
       });
@@ -1190,6 +1192,7 @@ export async function onNewMessage(userId: number, userName: string) {
             type: "message",
             message: action.message,
             photoId: action.photoId || undefined,
+            price: action.price || undefined,
             purpose: action.purpose,
             timing: action.timing,
           });

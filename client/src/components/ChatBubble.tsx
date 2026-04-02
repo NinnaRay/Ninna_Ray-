@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, CheckCheck, Lock, Unlock, ExternalLink } from "lucide-react";
+import { Check, CheckCheck, Lock, Unlock, ExternalLink, Play } from "lucide-react";
 
 interface ChatBubbleProps {
   role: "user" | "assistant";
@@ -12,23 +12,77 @@ interface ChatBubbleProps {
   isSeen?: boolean;
 }
 
+function TeaserPreview({ photoId }: { photoId: string }) {
+  const [mediaInfo, setMediaInfo] = useState<{ isVideo: boolean; isImage: boolean } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/content/info/${photoId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setMediaInfo(data); })
+      .catch(() => {});
+  }, [photoId]);
+
+  const isVideo = mediaInfo?.isVideo;
+
+  return (
+    <div className="relative mt-2 mb-1 rounded-xl overflow-hidden" data-testid={`teaser-${photoId}`}>
+      {isVideo ? (
+        <div className="w-full h-48 bg-gradient-to-b from-purple-900/60 to-black/80 flex items-center justify-center">
+          <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
+            <Play className="w-6 h-6 text-white ml-0.5" />
+          </div>
+          <div className="absolute bottom-3 left-3 text-white/60 text-xs font-medium">
+            Privátní video 🔒
+          </div>
+        </div>
+      ) : (
+        <>
+          <img
+            src={`/api/content/teaser/${photoId}`}
+            alt="Preview"
+            className={cn(
+              "w-full max-w-xs object-cover transition-opacity duration-500",
+              loaded ? "opacity-100" : "opacity-0"
+            )}
+            style={{ maxHeight: "200px" }}
+            onLoad={() => setLoaded(true)}
+            loading="lazy"
+            data-testid={`teaser-img-${photoId}`}
+          />
+          {!loaded && (
+            <div className="w-full h-48 bg-gradient-to-b from-purple-900/40 to-black/60 animate-pulse" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black/90 to-transparent flex items-end pb-1.5 px-3">
+            <span className="text-white/50 text-[10px] font-medium tracking-wide">🔒 Zamčený obsah</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PaymentButton({ photoId, price, url }: { photoId: string; price: string; url: string }) {
   return (
-    <motion.a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      whileHover={{ scale: 1.03 }}
-      whileTap={{ scale: 0.97 }}
-      className="flex items-center gap-3 mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-pink-500/20 transition-all no-underline"
-      data-testid={`button-unlock-${photoId}`}
-    >
-      <Lock className="w-4 h-4 shrink-0" />
-      <span className="flex-1">Odemknout za {price} Kč</span>
-      <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-60" />
-    </motion.a>
+    <div>
+      <TeaserPreview photoId={photoId} />
+      <motion.a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        whileHover={{ scale: 1.03 }}
+        whileTap={{ scale: 0.97 }}
+        className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-pink-500/20 transition-all no-underline"
+        data-testid={`button-unlock-${photoId}`}
+      >
+        <Lock className="w-4 h-4 shrink-0" />
+        <span className="flex-1">Odemknout za {price} Kč</span>
+        <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-60" />
+      </motion.a>
+    </div>
   );
 }
 

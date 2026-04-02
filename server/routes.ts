@@ -1160,6 +1160,45 @@ Vrať POUZE čistý JSON (bez markdown):
     }
   });
 
+  app.get("/api/content/teaser/:contentId", async (req, res) => {
+    try {
+      const contentId = parseInt(req.params.contentId);
+      if (isNaN(contentId)) return res.status(400).json({ message: "Invalid ID" });
+      const item = await storage.getContentItem(contentId);
+      if (!item) return res.status(404).json({ message: "Not found" });
+
+      const isImage = item.mimeType?.startsWith("image");
+      if (!isImage) {
+        return res.status(200).json({ type: "video", thumbnail: null });
+      }
+
+      const filePath = path.resolve(uploadDir, item.filename);
+      if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found" });
+
+      const sharp = (await import("sharp")).default;
+      const metadata = await sharp(filePath).metadata();
+      const width = metadata.width || 400;
+      const height = metadata.height || 600;
+
+      const cropHeight = Math.round(height * 0.45);
+
+      const teaser = await sharp(filePath)
+        .extract({ left: 0, top: 0, width, height: cropHeight })
+        .blur(8)
+        .modulate({ brightness: 0.85 })
+        .resize({ width: Math.min(width, 400) })
+        .jpeg({ quality: 60 })
+        .toBuffer();
+
+      res.set("Content-Type", "image/jpeg");
+      res.set("Cache-Control", "public, max-age=3600");
+      res.send(teaser);
+    } catch (err) {
+      console.error("[Teaser] Error:", (err as Error).message);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
   app.get("/api/content/info/:contentId", async (req, res) => {
     try {
       const contentId = parseInt(req.params.contentId);

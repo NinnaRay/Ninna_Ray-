@@ -1201,6 +1201,7 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-bold text-white">{userNameMap.get(action.userId!) || "?"}</span>
                     <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pCfg.cls}`}>{pCfg.icon} {pCfg.label}</span>
+                    {action.price && action.price > 0 && <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">💰 {action.price} Kč</span>}
                     {action.timing && <span className="text-[10px] text-neutral-500">⏰ {action.timing}</span>}
                   </div>
                   <span className="text-[9px] text-neutral-600">{formatDistanceToNow(new Date(action.createdAt), { locale: cs, addSuffix: true })}</span>
@@ -1253,6 +1254,52 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
         })}
         {filteredPending.length > 30 && <p className="text-[10px] text-neutral-600 text-center">+ dalších {filteredPending.length - 30} akcí</p>}
       </div>
+
+      {(() => {
+        const sellActions = pendingActions.filter(a => a.purpose === "sell" && a.photoId);
+        const byUser = new Map<number, typeof sellActions>();
+        sellActions.forEach(a => {
+          if (!a.userId) return;
+          if (!byUser.has(a.userId)) byUser.set(a.userId, []);
+          byUser.get(a.userId)!.push(a);
+        });
+        if (byUser.size === 0) return null;
+        return (
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-white">📋 Plán obsahu per zákazník</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {Array.from(byUser.entries()).map(([uid, acts]) => {
+                const name = userNameMap.get(uid) || "?";
+                const totalRevenue = acts.reduce((s, a) => s + (a.price || 0), 0);
+                return (
+                  <div key={uid} className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 space-y-2" data-testid={`content-plan-${uid}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-white">{name}</span>
+                      <span className="text-[9px] font-bold text-emerald-400">{totalRevenue > 0 ? `${totalRevenue} Kč` : ""}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {acts.map(a => {
+                        const vi = a.photoId ? vaultMap.get(a.photoId) : null;
+                        const isImg = vi && isImgFile(vi.filename);
+                        return (
+                          <div key={a.id} className="flex items-center gap-2 bg-neutral-800/50 rounded-lg p-1.5">
+                            {isImg && <img src={`/uploads/${vi!.filename}`} alt="" className="w-8 h-8 rounded object-cover border border-pink-500/20" />}
+                            {!isImg && vi && <div className="w-8 h-8 rounded bg-purple-500/20 flex items-center justify-center text-[10px]">🎬</div>}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] text-white truncate">#{a.photoId} {vi?.description || vi?.originalName || ""}</p>
+                              {a.price && a.price > 0 && <p className="text-[9px] text-emerald-400 font-bold">{a.price} Kč</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {doneActions.length > 0 && (
         <div className="space-y-2">

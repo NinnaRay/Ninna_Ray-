@@ -25,7 +25,7 @@ export interface IStorage {
   getContentItem(id: number): Promise<ContentItem | undefined>;
   deleteContentItem(id: number): Promise<void>;
   incrementContentUsage(id: number): Promise<void>;
-  createManagerAction(data: { userId: number | null; type: string; message?: string; photoId?: number; purpose?: string; timing?: string }): Promise<ManagerAction>;
+  createManagerAction(data: { userId: number | null; type: string; message?: string; photoId?: number; price?: number; purpose?: string; timing?: string }): Promise<ManagerAction>;
   getManagerActions(since?: Date): Promise<ManagerAction[]>;
   updateManagerAction(id: number, updates: Partial<{ status: string; result: string; executedAt: Date }>): Promise<void>;
   addManagerLog(event: string, detail?: string): Promise<void>;
@@ -148,12 +148,13 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createManagerAction(data: { userId: number | null; type: string; message?: string; photoId?: number; purpose?: string; timing?: string }): Promise<ManagerAction> {
+  async createManagerAction(data: { userId: number | null; type: string; message?: string; photoId?: number; price?: number; purpose?: string; timing?: string }): Promise<ManagerAction> {
     const [action] = await db.insert(managerActions).values({
       userId: data.userId,
       type: data.type,
       message: data.message || null,
       photoId: data.photoId || null,
+      price: data.price || null,
       purpose: data.purpose || null,
       timing: data.timing || null,
     }).returning();

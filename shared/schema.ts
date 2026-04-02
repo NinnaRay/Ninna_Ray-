@@ -53,6 +53,7 @@ export const managerActions = pgTable("manager_actions", {
   status: text("status").default("pending").notNull(),
   message: text("message"),
   photoId: integer("photo_id"),
+  price: integer("price"),
   purpose: text("purpose"),
   timing: text("timing"),
   result: text("result"),
