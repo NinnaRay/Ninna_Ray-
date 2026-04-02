@@ -1,4 +1,4 @@
-import { users, conversations, messages, contentItems, managerActions, managerLog, payments, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem, type ManagerAction, type ManagerLog, type Payment, type InsertPayment } from "@shared/schema";
+import { users, conversations, messages, contentItems, managerActions, managerLog, payments, avatarElements, avatarInstances, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type ContentItem, type InsertContentItem, type ManagerAction, type ManagerLog, type Payment, type InsertPayment, type AvatarElement, type InsertAvatarElement, type AvatarInstance, type InsertAvatarInstance } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, sql } from "drizzle-orm";
 
@@ -9,7 +9,6 @@ export interface IStorage {
   incrementMessageCount(userId: number): Promise<void>;
   getAllUsers(): Promise<User[]>;
 
-  // Chat operations
   getConversation(id: number): Promise<Conversation | undefined>;
   getConversationsByUser(userId: number): Promise<Conversation[]>;
   getAllConversations(): Promise<Conversation[]>;
@@ -39,6 +38,18 @@ export interface IStorage {
   updatePaymentStatus(id: number, status: string, stripePaymentIntentId?: string): Promise<void>;
   getPaymentByStripeSession(sessionId: string): Promise<Payment | undefined>;
   getPaymentStats(): Promise<{ totalRevenue: number; totalPayments: number; successfulPayments: number }>;
+
+  // ─── Virtual Twin: Avatar ──────────────────────────────────────────────────
+  getAvatarInstance(userId: number): Promise<AvatarInstance | undefined>;
+  createAvatarInstance(userId: number): Promise<AvatarInstance>;
+  updateAvatarConfig(userId: number, visualConfig: Record<string, any>): Promise<AvatarInstance>;
+  resetAvatarConfig(userId: number): Promise<AvatarInstance>;
+  getAvatarElementsByContentItem(contentItemId: number): Promise<AvatarElement[]>;
+  getAvatarElementsForUser(userId: number): Promise<AvatarElement[]>;
+  createAvatarElement(data: InsertAvatarElement): Promise<AvatarElement>;
+  deleteAvatarElement(id: number): Promise<void>;
+  getAllAvatarElements(): Promise<AvatarElement[]>;
+  updateAvatarLastInteraction(userId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -198,6 +209,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(conversations).where(eq(conversations.userId, userId));
     await db.delete(managerActions).where(eq(managerActions.userId, userId));
     await db.delete(payments).where(eq(payments.userId, userId));
+    await db.delete(avatarInstances).where(eq(avatarInstances.userId, userId));
     await db.delete(users).where(eq(users.id, userId));
   }
 
@@ -233,6 +245,90 @@ export class DatabaseStorage implements IStorage {
       totalPayments: allPays.length,
       successfulPayments: successful.length,
     };
+  }
+
+  // ─── Virtual Twin: Avatar ──────────────────────────────────────────────────
+
+  async getAvatarInstance(userId: number): Promise<AvatarInstance | undefined> {
+    const [instance] = await db.select().from(avatarInstances).where(eq(avatarInstances.userId, userId));
+    return instance;
+  }
+
+  async createAvatarInstance(userId: number): Promise<AvatarInstance> {
+    const [instance] = await db.insert(avatarInstances).values({
+      userId,
+      visualConfig: {},
+      personaName: "Ninna",
+      capabilityLevel: 1,
+    }).returning();
+    return instance;
+  }
+
+  async updateAvatarConfig(userId: number, visualConfig: Record<string, any>): Promise<AvatarInstance> {
+    const existing = await this.getAvatarInstance(userId);
+    if (!existing) {
+      const created = await this.createAvatarInstance(userId);
+      const [updated] = await db.update(avatarInstances)
+        .set({ visualConfig, updatedAt: new Date() })
+        .where(eq(avatarInstances.id, created.id))
+        .returning();
+      return updated;
+    }
+    const [updated] = await db.update(avatarInstances)
+      .set({ visualConfig, updatedAt: new Date() })
+      .where(eq(avatarInstances.userId, userId))
+      .returning();
+    return updated;
+  }
+
+  async resetAvatarConfig(userId: number): Promise<AvatarInstance> {
+    const existing = await this.getAvatarInstance(userId);
+    if (!existing) {
+      return this.createAvatarInstance(userId);
+    }
+    const [updated] = await db.update(avatarInstances)
+      .set({ visualConfig: {}, updatedAt: new Date() })
+      .where(eq(avatarInstances.userId, userId))
+      .returning();
+    return updated;
+  }
+
+  async getAvatarElementsByContentItem(contentItemId: number): Promise<AvatarElement[]> {
+    return db.select().from(avatarElements)
+      .where(eq(avatarElements.contentItemId, contentItemId));
+  }
+
+  async getAvatarElementsForUser(userId: number): Promise<AvatarElement[]> {
+    // Vrátit elementy z fotek, které zákazník zakoupil (payments completed)
+    const userPayments = await db.select().from(payments)
+      .where(eq(payments.userId, userId));
+    const paidContentIds = userPayments
+      .filter(p => p.status === "completed" && p.contentItemId)
+      .map(p => p.contentItemId as number);
+
+    if (paidContentIds.length === 0) return [];
+
+    const elements = await db.select().from(avatarElements);
+    return elements.filter(e => e.contentItemId && paidContentIds.includes(e.contentItemId));
+  }
+
+  async createAvatarElement(data: InsertAvatarElement): Promise<AvatarElement> {
+    const [element] = await db.insert(avatarElements).values(data).returning();
+    return element;
+  }
+
+  async deleteAvatarElement(id: number): Promise<void> {
+    await db.delete(avatarElements).where(eq(avatarElements.id, id));
+  }
+
+  async getAllAvatarElements(): Promise<AvatarElement[]> {
+    return db.select().from(avatarElements).orderBy(desc(avatarElements.createdAt));
+  }
+
+  async updateAvatarLastInteraction(userId: number): Promise<void> {
+    await db.update(avatarInstances)
+      .set({ lastInteraction: new Date(), updatedAt: new Date() })
+      .where(eq(avatarInstances.userId, userId));
   }
 }
 

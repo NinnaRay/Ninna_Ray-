@@ -3,7 +3,7 @@ import { useChat } from "@/hooks/use-chat";
 import { ChatBubble } from "@/components/ChatBubble";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, LogOut, ChevronLeft, Crown, Mic, Loader2 } from "lucide-react";
+import { Send, LogOut, ChevronLeft, Crown, Mic, Loader2, Wand2 } from "lucide-react";
 import { useVoice } from "@/hooks/use-voice";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -85,9 +85,20 @@ export default function Chat() {
           <Button
             variant="ghost"
             size="icon"
+            className="text-violet-400 hover:text-violet-300"
+            onClick={() => setLocation("/avatar")}
+            data-testid="button-avatar"
+            title="Virtual Twin Šatník"
+          >
+            <Wand2 className="w-5 h-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             className="text-amber-400 hover:text-amber-300"
             onClick={() => setLocation("/payment")}
             data-testid="button-vip"
+            title="VIP & Předplatné"
           >
             <Crown className="w-5 h-5" />
           </Button>

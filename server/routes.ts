@@ -1814,5 +1814,302 @@ Vrať POUZE čistý JSON (bez markdown):
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VIRTUAL TWIN: Avatar Skin & Customization Engine
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // GET /api/avatar/instance — vrátit aktuální konfiguraci Virtual Twina pro přihlášeného uživatele
+  app.get("/api/avatar/instance", async (req, res) => {
+    try {
+      const userId = req.session.userId;
+      if (!userId) return res.status(401).json({ message: "Nejsi přihlášen" });
+
+      let instance = await storage.getAvatarInstance(userId);
+      if (!instance) {
+        instance = await storage.createAvatarInstance(userId);
+      }
+
+      // Aktualizovat last interaction
+      await storage.updateAvatarLastInteraction(userId);
+
+      res.json({ instance });
+    } catch (err: any) {
+      console.error("[Avatar] instance error:", err.message);
+      res.status(500).json({ message: "Chyba při načítání avataru" });
+    }
+  });
+
+  // GET /api/avatar/elements — dostupné skiny z zakoupených fotek zákazníka
+  app.get("/api/avatar/elements", async (req, res) => {
+    try {
+      const userId = req.session.userId;
+      if (!userId) return res.status(401).json({ message: "Nejsi přihlášen" });
+
+      const elements = await storage.getAvatarElementsForUser(userId);
+      res.json({ elements });
+    } catch (err: any) {
+      console.error("[Avatar] elements error:", err.message);
+      res.status(500).json({ message: "Chyba při načítání elementů" });
+    }
+  });
+
+  // GET /api/avatar/elements/all — všechny elementy (pro owner/agent)
+  app.get("/api/avatar/elements/all", requireAgent, async (req, res) => {
+    try {
+      const elements = await storage.getAllAvatarElements();
+      const contentItemsList = await storage.getAllContentItems();
+      // Připojit info o foto ke každému elementu
+      const enriched = elements.map(e => ({
+        ...e,
+        contentItem: contentItemsList.find(c => c.id === e.contentItemId) || null,
+      }));
+      res.json({ elements: enriched });
+    } catch (err: any) {
+      console.error("[Avatar] elements/all error:", err.message);
+      res.status(500).json({ message: "Chyba při načítání elementů" });
+    }
+  });
+
+  // POST /api/avatar/apply-skin — aplikovat skin na Virtual Twina
+  app.post("/api/avatar/apply-skin", async (req, res) => {
+    try {
+      const userId = req.session.userId;
+      if (!userId) return res.status(401).json({ message: "Nejsi přihlášen" });
+
+      const { elementType, elementId, contentItemId } = req.body;
+      if (!elementType) return res.status(400).json({ message: "elementType je povinné" });
+
+      // Načíst aktuální konfiguraci
+      let instance = await storage.getAvatarInstance(userId);
+      const currentConfig = (instance?.visualConfig as Record<string, any>) || {};
+
+      // Pokud elementId je null — odebrat skin z dané kategorie
+      if (elementId === null || elementId === undefined) {
+        const newConfig = { ...currentConfig };
+        delete newConfig[`${elementType}_id`];
+        delete newConfig[`${elementType}_content_id`];
+        const updated = await storage.updateAvatarConfig(userId, newConfig);
+        return res.json({ instance: updated, message: `Skin ${elementType} odebrán` });
+      }
+
+      // Ověřit, že zákazník má přístup k tomuto elementu
+      const userElements = await storage.getAvatarElementsForUser(userId);
+      const element = userElements.find(e => e.id === parseInt(elementId));
+      if (!element) {
+        return res.status(403).json({ message: "Tento skin není dostupný. Nejprve si zakup fotku." });
+      }
+
+      // Aplikovat skin
+      const newConfig = {
+        ...currentConfig,
+        [`${elementType}_id`]: element.id,
+        [`${elementType}_content_id`]: element.contentItemId,
+        [`${elementType}_name`]: element.name,
+        [`${elementType}_preview`]: element.previewUrl,
+      };
+
+      const updated = await storage.updateAvatarConfig(userId, newConfig);
+      console.log(`[Avatar] User ${userId} applied skin ${elementType}: ${element.name}`);
+      res.json({ instance: updated, message: `Skin "${element.name}" aplikován` });
+    } catch (err: any) {
+      console.error("[Avatar] apply-skin error:", err.message);
+      res.status(500).json({ message: "Chyba při aplikaci skinu" });
+    }
+  });
+
+  // POST /api/avatar/reset — reset avataru na výchozí
+  app.post("/api/avatar/reset", async (req, res) => {
+    try {
+      const userId = req.session.userId;
+      if (!userId) return res.status(401).json({ message: "Nejsi přihlášen" });
+
+      const instance = await storage.resetAvatarConfig(userId);
+      res.json({ instance, message: "Avatar byl resetován na výchozí" });
+    } catch (err: any) {
+      console.error("[Avatar] reset error:", err.message);
+      res.status(500).json({ message: "Chyba při resetování avataru" });
+    }
+  });
+
+  // POST /api/avatar/elements — přidat nový element (owner/agent)
+  app.post("/api/avatar/elements", requireAgent, async (req, res) => {
+    try {
+      const { contentItemId, elementType, name, metadata } = req.body;
+      if (!contentItemId || !elementType || !name) {
+        return res.status(400).json({ message: "contentItemId, elementType a name jsou povinné" });
+      }
+
+      const validTypes = ["outfit", "hair", "background", "expression", "accessory"];
+      if (!validTypes.includes(elementType)) {
+        return res.status(400).json({ message: `Neplatný typ. Povolené typy: ${validTypes.join(", ")}` });
+      }
+
+      const contentItem = await storage.getContentItem(parseInt(contentItemId));
+      if (!contentItem) return res.status(404).json({ message: "Fotka nenalezena" });
+
+      // Použít teaser jako preview URL (blurred / cropped)
+      const baseUrl = process.env.REPLIT_DOMAINS
+        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
+        : `${req.protocol}://${req.get("host")}`;
+      const previewUrl = `${baseUrl}/api/content/teaser/${contentItem.id}`;
+
+      const element = await storage.createAvatarElement({
+        contentItemId: parseInt(contentItemId),
+        elementType,
+        name,
+        previewUrl,
+        metadata: metadata || {},
+      });
+
+      console.log(`[Avatar] Element created: ${name} (${elementType}) for content ${contentItemId}`);
+      res.json({ element });
+    } catch (err: any) {
+      console.error("[Avatar] create element error:", err.message);
+      res.status(500).json({ message: "Chyba při vytváření elementu" });
+    }
+  });
+
+  // DELETE /api/avatar/elements/:id — smazat element (owner/agent)
+  app.delete("/api/avatar/elements/:id", requireAgent, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteAvatarElement(id);
+      res.json({ message: "Element smazán" });
+    } catch (err: any) {
+      console.error("[Avatar] delete element error:", err.message);
+      res.status(500).json({ message: "Chyba při mazání elementu" });
+    }
+  });
+
+  // POST /api/avatar/analyze-photo — analyzovat fotku pomocí AI a extrahovat elementy
+  app.post("/api/avatar/analyze-photo", requireAgent, async (req, res) => {
+    try {
+      const { contentItemId } = req.body;
+      if (!contentItemId) return res.status(400).json({ message: "contentItemId je povinné" });
+
+      const contentItem = await storage.getContentItem(parseInt(contentItemId));
+      if (!contentItem) return res.status(404).json({ message: "Fotka nenalezena" });
+
+      if (!contentItem.mimeType.startsWith("image/")) {
+        return res.status(400).json({ message: "Pouze obrázky mohou být analyzovány" });
+      }
+
+      const uploadsDir = path.resolve(process.cwd(), "uploads");
+      const filePath = path.join(uploadsDir, contentItem.filename);
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "Soubor nenalezen na disku" });
+      }
+
+      // Načíst obrázek jako base64
+      const imageBuffer = fs.readFileSync(filePath);
+      const base64Image = imageBuffer.toString("base64");
+      const mimeType = contentItem.mimeType;
+
+      // Použít GPT-4o Vision pro analýzu vizuálních prvků
+      const analysisResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Analyzuj tuto fotografii modelky Ninny a extrahuj vizuální prvky pro Avatar Engine. Vrať JSON objekt s těmito klíči:
+- outfit: { color: string, style: string, name: string } nebo null
+- hair: { color: string, style: string, name: string } nebo null  
+- background: { type: string, color: string, name: string } nebo null
+- expression: { mood: string, intensity: string, name: string } nebo null
+- accessory: { type: string, name: string } nebo null (pokud je doplněk výrazný)
+
+Jméno (name) musí být v češtině, výstižné a poetické (např. "Červené hedvábné šaty", "Zlaté vlny", "Studijní bílé pozadí"). Vrať pouze JSON bez dalšího textu.`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`,
+                  detail: "low"
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 500,
+      });
+
+      const rawText = analysisResponse.choices[0]?.message?.content || "{}";
+      let analysisResult: Record<string, any> = {};
+      try {
+        // Odstranit markdown code fences pokud jsou přítomny
+        const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        analysisResult = JSON.parse(cleaned);
+      } catch {
+        console.error("[Avatar] AI response parse error:", rawText);
+        return res.status(500).json({ message: "AI vrátila neplatný JSON" });
+      }
+
+      // Automaticky vytvořit elementy pro každý extrahovaný prvek
+      const baseUrl = process.env.REPLIT_DOMAINS
+        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
+        : `${req.protocol}://${req.get("host")}`;
+      const previewUrl = `${baseUrl}/api/content/teaser/${contentItem.id}`;
+
+      const createdElements: any[] = [];
+      const validTypes = ["outfit", "hair", "background", "expression", "accessory"];
+
+      for (const elementType of validTypes) {
+        if (analysisResult[elementType]) {
+          const el = analysisResult[elementType];
+          if (el && el.name) {
+            const element = await storage.createAvatarElement({
+              contentItemId: parseInt(contentItemId),
+              elementType,
+              name: el.name,
+              previewUrl,
+              metadata: el,
+            });
+            createdElements.push(element);
+          }
+        }
+      }
+
+      console.log(`[Avatar] Analyzed photo ${contentItemId}, created ${createdElements.length} elements`);
+      res.json({
+        analysis: analysisResult,
+        createdElements,
+        message: `Extrahováno ${createdElements.length} vizuálních prvků z fotografie`
+      });
+    } catch (err: any) {
+      console.error("[Avatar] analyze-photo error:", err.message);
+      res.status(500).json({ message: "Chyba při analýze fotky: " + err.message });
+    }
+  });
+
+  // GET /api/avatar/config-summary — pro AI manager engine (interní)
+  app.get("/api/avatar/config-summary/:userId", requireAgent, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const instance = await storage.getAvatarInstance(userId);
+      if (!instance || !instance.visualConfig) {
+        return res.json({ summary: null, config: {} });
+      }
+
+      const config = instance.visualConfig as Record<string, any>;
+      const parts: string[] = [];
+      if (config.outfit_name) parts.push(`oblečení: ${config.outfit_name}`);
+      if (config.hair_name) parts.push(`vlasy: ${config.hair_name}`);
+      if (config.background_name) parts.push(`pozadí: ${config.background_name}`);
+      if (config.expression_name) parts.push(`výraz: ${config.expression_name}`);
+      if (config.accessory_name) parts.push(`doplněk: ${config.accessory_name}`);
+
+      const summary = parts.length > 0
+        ? `Zákazník si přizpůsobil svého Virtual Twina Ninny: ${parts.join(", ")}.`
+        : null;
+
+      res.json({ summary, config });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

@@ -11,6 +11,7 @@ import ManagerDashboard from "@/pages/ManagerDashboard";
 import Payment from "@/pages/Payment";
 import PaymentSuccess from "@/pages/PaymentSuccess";
 import PaymentCancel from "@/pages/PaymentCancel";
+import AvatarCustomizer from "@/pages/AvatarCustomizer";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/payment" component={Payment} />
       <Route path="/payment/success" component={PaymentSuccess} />
       <Route path="/payment/cancel" component={PaymentCancel} />
+      <Route path="/avatar" component={AvatarCustomizer} />
       <Route component={NotFound} />
     </Switch>
   );
