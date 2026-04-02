@@ -70,6 +70,47 @@ export class WebhookHandlers {
         break;
       }
 
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const sub = event.data.object;
+        if (sub.status === 'active' || sub.status === 'trialing') {
+          try {
+            const customerId = sub.customer as string;
+            const allUsers = await storage.getAllUsers();
+            const user = allUsers.find(u => u.stripeCustomerId === customerId);
+            if (user) {
+              await storage.updateUser(user.id, { platform: "vip_subscriber" } as any);
+              console.log(`[Webhook] Subscription activated for user #${user.id} (${user.name})`);
+              await storage.addManagerLog("subscription_activated", `Předplatné aktivováno pro ${user.name} (${sub.status})`);
+              const convs = await storage.getConversationsByUser(user.id);
+              if (convs.length > 0) {
+                await storage.createMessage(convs[0].id, "assistant",
+                  `✅ Tvoje předplatné je aktivní! Jsem ráda, že jsi tu. 💋 Teď ti odemknu obsah přímo tady v chatu.`
+                );
+              }
+            }
+          } catch (err: any) {
+            console.error('[Webhook] subscription.created/updated error:', err.message);
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object;
+        try {
+          const customerId = sub.customer as string;
+          const allUsers = await storage.getAllUsers();
+          const user = allUsers.find(u => u.stripeCustomerId === customerId);
+          if (user) {
+            await storage.addManagerLog("subscription_cancelled", `Předplatné zrušeno pro ${user.name}`);
+          }
+        } catch (err: any) {
+          console.error('[Webhook] subscription.deleted error:', err.message);
+        }
+        break;
+      }
+
       case 'payment_intent.payment_failed': {
         const intent = event.data.object;
         const error = intent.last_payment_error?.message || 'Unknown error';

@@ -121,6 +121,10 @@ async function initStripe() {
     stripeSync.syncBackfill()
       .then(() => console.log('[Stripe] Data synced'))
       .catch((err: any) => console.error('[Stripe] Sync error:', err.message));
+
+    import('./stripeService').then(m => m.stripeService.ensureSubscriptionProducts())
+      .then(() => console.log('[Stripe] Subscription products ready'))
+      .catch((err: any) => console.error('[Stripe] Subscription products error:', err.message));
   } catch (error: any) {
     console.error('[Stripe] Init failed:', error.message);
   }

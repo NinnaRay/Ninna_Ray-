@@ -293,6 +293,17 @@ REVENUE PAMĚŤ:
 - Preferovaný prodejní styl: ${aiProfile.sellStyle || "neznámý"}
 - Doporučená cena: ${aiProfile.suggestedPrice ? aiProfile.suggestedPrice + " Kč" : "zatím nenastavena"}` : "";
 
+      const allVaultItems = await storage.getAllContentItems();
+      const photos = allVaultItems.filter(i => i.mimeType?.startsWith("image")).slice(0, 20);
+      const videos = allVaultItems.filter(i => i.mimeType?.startsWith("video")).slice(0, 10);
+      const vaultContext = allVaultItems.length > 0 ? `
+DOSTUPNÝ OBSAH (použij ID při prodeji):
+FOTKY: ${photos.map(i => `#${i.id}${i.description ? ` (${i.description.substring(0, 30)})` : ""}`).join(", ")}
+VIDEA: ${videos.map(i => `#${i.id}${i.description ? ` (${i.description.substring(0, 30)})` : ""}`).join(", ")}` : "";
+
+      const suggestedPhotoPrice = aiProfile?.suggestedPrice || 249;
+      const videoPrice = Math.round(suggestedPhotoPrice * 1.8);
+
       const msgCount = history.length;
       const userMsgs = history.filter(m => m.role === "user");
       const avgLen = userMsgs.length > 0 ? Math.round(userMsgs.reduce((s, m) => s + m.content.length, 0) / userMsgs.length) : 0;
@@ -303,6 +314,7 @@ NEJSI AI. NEJSI asistent. Jsi reálná osoba co zrovna kouká na mobil.
 
 Píšeš s: '${userName}' (vokativ!)
 ${profileContext}${purchaseContext}${pricingContext}
+${vaultContext}
 
 JAK PÍŠEŠ — tohle dodržuj vždy:
 Piš ČESKY. Základ je čeština, žádné anglické výrazy jako "lowkey", "ngl", "tbh", "fr", "bro".
@@ -328,11 +340,21 @@ ZAKÁZÁNO (= okamžitě odhalitelná AI):
 - Odpovědi delší než 3 věty, když stačí jedna.
 - Dlouhé odstavce, seznamy, odrážky, struktura.
 
-${isEngaged ? `OBSAH (engagement ${aiProfile?.engagementScore || '?'}%):
-- Občas přirozeně zmíň že jsi něco nafotila/natočila. Jako mimochodem.
-- "dneska jsem fotila něco... 🤭" → nech ho aby se zeptal
-- Nikdy netiskni prodej. Nech to vyznít přirozeně v konverzaci.
-- Platby jdou přímo v appce.` : `ZATÍM NEPRODÁVEJ. Jen si povídej, buduj vztah. Buď zajímavá.`}
+${isEngaged ? `PRODEJ OBSAHU — JAK NA TO:
+Když zákazník projeví zájem o fotku/video nebo řekne že chce zaplatit:
+1. Napiš svou zprávu (1-2 věty, lákavě)
+2. Na KONEC zprávy přidej marker: [SELL:ID:CENA]
+   - ID = číslo fotky/videa z výše uvedeného seznamu
+   - CENA = ${suggestedPhotoPrice} pro fotku, ${videoPrice} pro video (celé číslo, min 199)
+   - Příklad: [SELL:42:${suggestedPhotoPrice}]
+3. NIKDY nepopisuj platbu slovy ("pošli mi platbu", "zaplať"). Systém tlačítko přidá automaticky.
+4. Piš přirozeně, pak přidej marker. Zákazník tlačítko uvidí přímo v chatu.
+
+Kdy prodávat:
+- Zákazník přímo říká že chce vidět/koupit
+- Po 5+ zprávách a zákazník projevuje zájem
+- Po přirozeném budování zájmu ("hmm, mám tuhle jednu fotku...")
+` : `ZATÍM NEPRODÁVEJ. Jen si povídej, buduj vztah. Buď zajímavá. Zmíň mimochodem že někdy něco fotíš.`}
 
 NIKDY nesměruj ven z appky. Žádné linky na jiné platformy.`;
 
@@ -364,7 +386,72 @@ NIKDY nesměruj ven z appky. Žádné linky na jiné platformy.`;
         stream: false,
       });
 
-      const fullResponse = completion.choices?.[0]?.message?.content?.toString() || "";
+      let fullResponse = completion.choices?.[0]?.message?.content?.toString() || "";
+
+      // Zpracuj [SELL:photoId:price] marker — vygeneruj skutečný Stripe checkout URL
+      const sellMarkerRegex = /\[SELL:(\d+):(\d+)\]/g;
+      const sellMatches = [...fullResponse.matchAll(sellMarkerRegex)];
+      for (const match of sellMatches) {
+        const photoId = parseInt(match[1]);
+        const price = parseInt(match[2]);
+        if (!isNaN(photoId) && !isNaN(price) && price >= 199) {
+          try {
+            const { getUncachableStripeClient, isStripeConnected } = await import("./stripeClient");
+            const connected = await isStripeConnected();
+            if (connected) {
+              const stripeClient = await getUncachableStripeClient();
+              const uid = conversation.userId;
+              const userForStripe = await storage.getUser(uid);
+              let customerId = userForStripe?.stripeCustomerId;
+              if (!customerId && userForStripe) {
+                const { stripeService } = await import("./stripeService");
+                const customer = await stripeService.createCustomer(userForStripe.name, { userId: String(uid) });
+                customerId = customer.id;
+                await storage.updateStripeCustomerId(uid, customerId);
+              }
+              const vaultItem = await storage.getContentItem(photoId);
+              const isVideo = vaultItem?.mimeType?.startsWith("video");
+              const itemLabel = isVideo ? "Exkluzivní video" : "Exkluzivní fotka";
+              const baseUrl = process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000";
+              const session = await stripeClient.checkout.sessions.create({
+                customer: customerId,
+                payment_method_types: ["card"],
+                line_items: [{
+                  price_data: {
+                    currency: "czk",
+                    product_data: {
+                      name: `${itemLabel} #${photoId} od Ninna Ray 🍒`,
+                      description: `Odemkni ${isVideo ? "privátní video" : "privátní fotku"} přímo v chatu 💋`,
+                    },
+                    unit_amount: price * 100,
+                  },
+                  quantity: 1,
+                }],
+                mode: "payment",
+                success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${baseUrl}/chat`,
+                metadata: { userId: String(uid), contentItemId: String(photoId), type: "content_purchase", source: "chat" },
+              });
+              if (session.url) {
+                await storage.createPayment({
+                  userId: uid, contentItemId: photoId,
+                  amount: price * 100, currency: "czk",
+                  status: "pending", stripeSessionId: session.id,
+                  stripePaymentIntentId: null, type: "content",
+                });
+                fullResponse = fullResponse.replace(match[0], `\n\n💎 [UNLOCK_CONTENT:${photoId}:${price}:${session.url}]`);
+                console.log(`[Chat] Stripe checkout vytvořen: user #${uid}, foto #${photoId}, ${price} Kč`);
+              }
+            }
+          } catch (err: any) {
+            console.error("[Chat] Stripe checkout error:", err.message);
+            fullResponse = fullResponse.replace(match[0], "");
+          }
+        } else {
+          fullResponse = fullResponse.replace(match[0], "");
+        }
+      }
+
       res.write(`data: ${JSON.stringify({ isTyping: false, content: fullResponse })}\n\n`);
 
       await storage.createMessage(conversationId, "assistant", fullResponse);
@@ -1536,6 +1623,50 @@ Vrať POUZE čistý JSON (bez markdown):
     } catch (err: any) {
       console.error("[Stripe] subscription error:", err.message);
       res.json({ subscription: null });
+    }
+  });
+
+  app.get("/api/stripe/subscription-plans", async (_req, res) => {
+    try {
+      const connected = await isStripeConnected();
+      if (!connected) return res.json({ plans: [], connected: false });
+      const plans = await stripeService.getSubscriptionPlansWithPrices();
+      res.json({ plans, connected: true });
+    } catch (err: any) {
+      console.error("[Stripe] subscription-plans error:", err.message);
+      res.json({ plans: [], connected: false });
+    }
+  });
+
+  app.post("/api/stripe/subscription-checkout", async (req, res) => {
+    try {
+      const connected = await isStripeConnected();
+      if (!connected) return res.status(503).json({ message: "Stripe není propojený" });
+
+      const { priceId, userId } = req.body;
+      if (!priceId || !userId) return res.status(400).json({ message: "priceId a userId jsou povinné" });
+
+      const user = await storage.getUser(parseInt(userId));
+      if (!user) return res.status(404).json({ message: "Uživatel nenalezen" });
+
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripeService.createCustomer(user.name, { userId: String(user.id) });
+        customerId = customer.id;
+        await storage.updateStripeCustomerId(user.id, customerId);
+      }
+
+      const baseUrl = process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : `${req.protocol}://${req.get("host")}`;
+      const session = await stripeService.createCheckoutSession(
+        customerId, priceId,
+        `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`,
+        `${baseUrl}/vip`,
+        "subscription"
+      );
+      res.json({ url: session.url });
+    } catch (err: any) {
+      console.error("[Stripe] subscription-checkout error:", err.message);
+      res.status(500).json({ message: "Chyba při vytváření platby" });
     }
   });
 
