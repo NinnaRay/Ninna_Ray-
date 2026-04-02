@@ -44,6 +44,7 @@ const openai = new OpenAI({
 // ─── Credentials (set in Replit Secrets) ─────────────────────────────────────
 const AGENT_PASSWORD = process.env.AGENT_PASSWORD || "agent2025";
 const OWNER_PASSWORD = process.env.OWNER_PASSWORD || "owner2025";
+const AGENCY_PASSWORD = process.env.AGENCY_PASSWORD || "ninna2025";
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 function requireAgent(req: Request, res: Response, next: NextFunction) {
@@ -100,6 +101,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       req.session.role = "owner";
       req.session.username = req.body.username || "Owner";
       return res.json({ role: "owner", username: req.session.username });
+    }
+    if (role === "agency" && password === AGENCY_PASSWORD) {
+      req.session.role = "agency";
+      return res.json({ role: "agency" });
     }
     res.status(401).json({ message: "Nesprávné heslo" });
   });
