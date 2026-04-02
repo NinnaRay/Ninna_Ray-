@@ -531,15 +531,18 @@ NIKDY NEDĚLEJ:
                 cancel_url: `${baseUrl}/chat`,
                 metadata: { userId: String(uid), contentItemId: String(photoId), type: "content_purchase", source: "chat" },
               });
-              if (session.url) {
+              if (session?.url) {
                 await storage.createPayment({
                   userId: uid, contentItemId: photoId,
                   amount: price * 100, currency: "czk",
                   status: "pending", stripeSessionId: session.id,
                   stripePaymentIntentId: null, type: "content",
                 });
-                fullResponse = fullResponse.replace(match[0], `\n\n💎 [UNLOCK_CONTENT:${photoId}:${price}:${session.url}]`);
-                console.log(`[Chat] Stripe checkout vytvořen: user #${uid}, foto #${photoId}, ${price} Kč`);
+                const unlockMarker = `[UNLOCK_CONTENT:${photoId}:${price}:${session.url}]`;
+                fullResponse = fullResponse.replace(match[0], `\n\n💎 ${unlockMarker}`);
+                console.log(`[Chat] Stripe checkout created: user #${uid}, content #${photoId}, ${price} Kč, URL: ${session.url}`);
+              } else {
+                console.error(`[Chat] Stripe checkout failed: no URL returned for user #${uid}, content #${photoId}`);
               }
             }
           } catch (err: any) {
@@ -1722,6 +1725,31 @@ Vrať POUZE čistý JSON (bez markdown):
     } catch (err: any) {
       console.error("[Stripe] subscription error:", err.message);
       res.json({ subscription: null });
+    }
+  });
+
+  app.get("/api/stripe/session-info/:sessionId", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      if (!sessionId) return res.status(400).json({ message: "sessionId je povinné" });
+      
+      const connected = await isStripeConnected();
+      if (!connected) return res.status(503).json({ message: "Stripe není propojený" });
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      res.json({
+        id: session.id,
+        status: session.payment_status,
+        amount: session.amount_total,
+        currency: session.currency,
+        customer: session.customer,
+        metadata: session.metadata,
+        success: session.payment_status === "paid",
+      });
+    } catch (err: any) {
+      console.error("[Stripe] session-info error:", err.message);
+      res.status(500).json({ message: "Chyba při čtení session" });
     }
   });
 
