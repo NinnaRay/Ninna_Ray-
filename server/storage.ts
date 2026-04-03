@@ -60,7 +60,9 @@ export interface IStorage {
   getAllAvatarInstances(): Promise<AvatarInstance[]>;
   getUnlockedAssetCountsByUser(): Promise<Map<number, number>>;
   getBotWardrobe(userId: number): Promise<{ unlocked: AvatarElement[]; locked: AvatarElement[] }>;
-  getUserBotContext(userId: number): Promise<{ hasBot: boolean; unlockedCount: number; totalCount: number; outfitNames: string[] }>;
+  getUserBotContext(userId: number): Promise<{ hasBot: boolean; capabilityLevel: number; unlockedCount: number; totalCount: number; outfitNames: string[] }>;
+  updateCapabilityLevel(userId: number, level: number): Promise<void>;
+  autoCreateAvatarElements(contentItemId: number): Promise<AvatarElement[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -435,9 +437,10 @@ export class DatabaseStorage implements IStorage {
     return { unlocked, locked };
   }
 
-  async getUserBotContext(userId: number): Promise<{ hasBot: boolean; unlockedCount: number; totalCount: number; outfitNames: string[] }> {
+  async getUserBotContext(userId: number): Promise<{ hasBot: boolean; capabilityLevel: number; unlockedCount: number; totalCount: number; outfitNames: string[] }> {
     const instance = await this.getAvatarInstance(userId);
     const hasBot = !!(instance?.botEnabled);
+    const capabilityLevel = instance?.capabilityLevel || 0;
     const { unlocked } = await this.getBotWardrobe(userId);
     const allElements = await this.getAllAvatarElements();
 
@@ -449,10 +452,64 @@ export class DatabaseStorage implements IStorage {
 
     return {
       hasBot,
+      capabilityLevel,
       unlockedCount: unlocked.length,
       totalCount: allElements.length,
       outfitNames,
     };
+  }
+
+  async updateCapabilityLevel(userId: number, level: number): Promise<void> {
+    let instance = await this.getAvatarInstance(userId);
+    if (!instance) {
+      instance = await this.createAvatarInstance(userId);
+    }
+    await db.update(avatarInstances)
+      .set({ capabilityLevel: level, updatedAt: new Date() })
+      .where(eq(avatarInstances.userId, userId));
+    console.log(`[Twin] Capability level updated to ${level} for user #${userId}`);
+  }
+
+  async autoCreateAvatarElements(contentItemId: number): Promise<AvatarElement[]> {
+    const existing = await this.getAvatarElementsByContentItem(contentItemId);
+    if (existing.length > 0) return existing;
+
+    const item = await this.getContentItem(contentItemId);
+    if (!item) return [];
+
+    const isImage = item.mimeType?.startsWith("image");
+    const isVideo = item.mimeType?.startsWith("video");
+    if (!isImage && !isVideo) return [];
+
+    const elements: AvatarElement[] = [];
+    const baseName = item.description || item.originalName?.replace(/\.[^.]+$/, "") || `Obsah #${contentItemId}`;
+    const tags = (item.tags || []).concat(item.assetTags || []);
+
+    const typeFromTags = (ts: string[]): string => {
+      const lower = ts.map(t => t.toLowerCase()).join(" ");
+      if (lower.includes("outfit") || lower.includes("šaty") || lower.includes("dress") || lower.includes("oblečen") || lower.includes("bikini") || lower.includes("spodní") || lower.includes("lingerie")) return "outfit";
+      if (lower.includes("vlas") || lower.includes("hair") || lower.includes("účes")) return "hair";
+      if (lower.includes("pozadí") || lower.includes("background") || lower.includes("lokace") || lower.includes("exterior") || lower.includes("interior")) return "background";
+      if (lower.includes("výraz") || lower.includes("expression") || lower.includes("smile") || lower.includes("úsměv") || lower.includes("sexy")) return "expression";
+      if (lower.includes("doplněk") || lower.includes("accessory") || lower.includes("šperky") || lower.includes("brýle")) return "accessory";
+      return "outfit";
+    };
+
+    const elementType = typeFromTags(tags);
+    const previewUrl = isImage ? `/api/content/${contentItemId}/file` : null;
+
+    const [el] = await db.insert(avatarElements).values({
+      contentItemId,
+      elementType,
+      name: baseName,
+      previewUrl,
+      priceHint: null,
+      metadata: { autoCreated: true, tags },
+    }).returning();
+    elements.push(el);
+
+    console.log(`[Twin] Auto-created avatar element "${baseName}" (${elementType}) from content #${contentItemId}`);
+    return elements;
   }
 }
 

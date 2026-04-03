@@ -30,9 +30,26 @@ interface AvatarElement {
   metadata: Record<string, any>;
 }
 
+interface TwinCapabilities {
+  basicChat: boolean;
+  purchaseHistory: boolean;
+  skinUnlocking: boolean;
+  proactiveRecommendations: boolean;
+  notifications: boolean;
+  visualCustomization: boolean;
+  advancedCustomization: boolean;
+  exclusiveContent: boolean;
+  prioritySupport: boolean;
+  planning: boolean;
+}
+
 interface BotStatus {
   isSubscribed: boolean;
   botEnabled: boolean;
+  capabilityLevel: number;
+  capabilities: TwinCapabilities;
+  currentPlan: { key: string; name: string; emoji: string } | null;
+  nextPlan: { key: string; name: string; emoji: string; priceMonthly: number } | null;
   unlockedCount: number;
   lockedCount: number;
   totalCount: number;
@@ -444,21 +461,28 @@ export default function EBot() {
           </Button>
           <div className="flex-1 flex items-center gap-2">
             <Bot className="w-4 h-4 text-pink-400" />
-            <span className="text-sm font-bold text-white">Ninna E-Bot</span>
-            <Badge className="bg-pink-500/15 text-pink-300 border-pink-500/25 text-[10px] px-2">
-              {botStatus.unlockedCount}/{botStatus.totalCount} odemčeno
+            <span className="text-sm font-bold text-white">Ninna Twin</span>
+            {botStatus.currentPlan && (
+              <Badge className="bg-gradient-to-r from-pink-500/15 to-purple-500/15 text-pink-300 border-pink-500/25 text-[10px] px-2" data-testid="badge-current-tier">
+                {botStatus.currentPlan.emoji} {botStatus.currentPlan.name.replace("Ninna Ray ", "")}
+              </Badge>
+            )}
+            <Badge className="bg-white/5 text-zinc-400 border-white/10 text-[10px] px-2" data-testid="badge-unlocked-count">
+              {botStatus.unlockedCount}/{botStatus.totalCount} skinů
             </Badge>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setLocation("/payment")}
-            className="text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/10 text-xs gap-1"
-            data-testid="button-manage-subscription"
-          >
-            <Crown className="w-3.5 h-3.5" />
-            VIP
-          </Button>
+          {botStatus.nextPlan && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLocation("/payment")}
+              className="text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/10 text-xs gap-1"
+              data-testid="button-upgrade-tier"
+            >
+              <Crown className="w-3.5 h-3.5" />
+              Upgrade
+            </Button>
+          )}
         </div>
       </div>
 
@@ -511,6 +535,55 @@ export default function EBot() {
                 <p className="text-[10px] text-white/40 mt-0.5">zamčeno</p>
               </div>
             </div>
+
+            {/* Tier Capabilities */}
+            {botStatus.capabilities && (
+              <div className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-3" data-testid="panel-tier-capabilities">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-white/70">Schopnosti Twina</p>
+                  <span className="text-[10px] text-zinc-500">Level {botStatus.capabilityLevel}/3</span>
+                </div>
+                <div className="space-y-1.5">
+                  {[
+                    { key: "basicChat", label: "Chat s Ninnou", icon: "💬" },
+                    { key: "purchaseHistory", label: "Přehled nákupů", icon: "📋" },
+                    { key: "skinUnlocking", label: "Odemykání skinů", icon: "🔓" },
+                    { key: "proactiveRecommendations", label: "Proaktivní doporučení", icon: "💡" },
+                    { key: "notifications", label: "Upozornění na novinky", icon: "🔔" },
+                    { key: "visualCustomization", label: "Vizuální customizace", icon: "🎨" },
+                    { key: "advancedCustomization", label: "Pokročilá customizace", icon: "⚡" },
+                    { key: "exclusiveContent", label: "Exkluzivní obsah", icon: "🌟" },
+                    { key: "prioritySupport", label: "Prioritní podpora", icon: "🛡️" },
+                    { key: "planning", label: "Plánování eventů", icon: "📅" },
+                  ].map(({ key, label, icon }) => {
+                    const enabled = (botStatus.capabilities as any)[key];
+                    return (
+                      <div key={key} className={`flex items-center gap-2 text-xs py-1 ${enabled ? "text-white/80" : "text-white/25"}`} data-testid={`capability-${key}`}>
+                        <span className={`text-sm ${enabled ? "" : "grayscale opacity-30"}`}>{icon}</span>
+                        <span className="flex-1">{label}</span>
+                        {enabled ? (
+                          <CheckCircle className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <Lock className="w-3 h-3 text-zinc-600" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {botStatus.nextPlan && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setLocation("/payment")}
+                    className="w-full text-xs text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/8 border border-amber-500/15 rounded-lg h-8 mt-2"
+                    data-testid="button-upgrade-capabilities"
+                  >
+                    <Crown className="w-3 h-3 mr-1.5" />
+                    Upgrade na {botStatus.nextPlan.name.replace("Ninna Ray ", "")} — {Math.round(botStatus.nextPlan.priceMonthly / 100)} Kč/měs
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* RIGHT — Šatník */}

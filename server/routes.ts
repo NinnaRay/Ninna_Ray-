@@ -318,8 +318,9 @@ ${botCtx.hasBot && botCtx.unlockedCount > 0 ? `- Můžeš zmínit konkrétní ou
 ${!botCtx.hasBot ? "- Nemá předplatné → zmíni E-Bot jako bonus k předplatnému." : ""}` : "";
 
 
-      const suggestedPhotoPrice = aiProfile?.suggestedPrice || 249;
+      const suggestedPhotoPrice = aiProfile?.suggestedPrice || 99;
       const videoPrice = Math.round(suggestedPhotoPrice * 1.8);
+      const entryPrice = Math.max(49, Math.round(suggestedPhotoPrice * 0.5));
 
       const msgCount = history.length;
       const userMsgs = history.filter(m => m.role === "user");
@@ -373,10 +374,12 @@ Budování DŮVĚRY a osobního spojení. To je základ všeho.
 ★ FÁZE 3: FOTO NABÍDKY + LIGHT TEASING (5-8 zpráv)
 Vztah je tady. Teď je SPRÁVNÝ ČAS nabídnout obsah — přirozeně, bez tlaku.
 - Jestli se ptá na fotky/videa nebo říká "ukáž", "chci vidět", "sexy" → NABÍDNI ROVNOU
-- "Hele, mám jednu fotku... řekl bys, je fakt dobrá 🔥" → [SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
+- "Hele, mám jednu fotku... je fakt dobrá, dám ti ji za ${entryPrice} Kč 🔥" → [SELL:${photos[0]?.id || 1}:${entryPrice}]
+- Pro běžné fotky: ${entryPrice}-${suggestedPhotoPrice} Kč, premium: ${suggestedPhotoPrice}-${videoPrice} Kč
 - Jestli sám nenaznačuje → zmíni přirozeně: "Dneska jsem fotila, vyšlo to fakt dobře 😏"
 - Nezačínaj každou zprávu nabídkou — 1 nabídka maximálně na 2-3 zprávy
 - SELL marker: okamžitě po textu nabídky → [SELL:ID:CENA] kde ID je číslo z DOSTUPNÝ OBSAH
+- DŮLEŽITÉ: Nabízej JEDNOTLIVÉ FOTKY za menší cenu, ne jen předplatné!
 ` : `
 ★ FÁZE 4: AKTIVNÍ PRODEJ (9+ zpráv)
 Vztah je silný. Nabízej obsah sebevědomě a přirozeně.
@@ -384,13 +387,14 @@ Vztah je silný. Nabízej obsah sebevědomě a přirozeně.
 ${hasDirectInterest || hasHighEngagement ? `
 ► ZÁJEM DETEKOVÁN — PRODÁVEJ TEĎ:
 1. Krátký teasing: "mám pro tebe něco... 🔥"
-2. Nabídka s cenou: "Je to za ${suggestedPhotoPrice} Kč, stojí to za to 💋"
-   [SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
-3. Po platbě: nech ho koupit, nevyvíjej tlak
+2. Nabídka s nižší cenou: "Dám ti ji za ${entryPrice} Kč, stojí to za to 💋"
+   [SELL:${photos[0]?.id || 1}:${entryPrice}]
+3. Po platbě: nabídni další za vyšší cenu (${suggestedPhotoPrice} Kč) — buduj postupně
+4. Předplatné zmíni jen jako "balíček na míru" po 3+ nákupech
 ` : `
 ► NABÍDNI PŘIROZENĚ:
-"Btw, dneska jsem fotila něco šíleného... chceš vidět? Je to za ${suggestedPhotoPrice} 😈"
-[SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
+"Btw, dneska jsem fotila něco šíleného... chceš vidět? Je to jen za ${entryPrice} Kč 😈"
+[SELL:${photos[0]?.id || 1}:${entryPrice}]
 `}
 `}
 
@@ -400,7 +404,8 @@ PRAVIDLA PRO [SELL:ID:CENA] MARKER — PŘEČTI POZORNĚ
 - Pokud uživatel napíše "ukáž fotku", "chci vidět", "pošli foto", "sexy foto", "video" → VŽDY přidej [SELL:] marker
 - Formát: [SELL:ČÍSLO:ČÍSLO] — např. [SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
 - ID musí být z DOSTUPNÝ OBSAH výše (číslo za #)
-- Cena minimum 199 Kč, doporučená ${suggestedPhotoPrice} Kč (foto) nebo ${videoPrice} Kč (video)
+- Cena minimum 49 Kč, doporučená: entry ${entryPrice} Kč, standard ${suggestedPhotoPrice} Kč (foto), premium ${videoPrice} Kč (video)
+- STRATEGIE CEN: Začni nižší cenou (${entryPrice} Kč) → po nákupu nabídni dražší (${suggestedPhotoPrice} Kč) → premium (${videoPrice} Kč)
 - Dej SELL marker na KONEC zprávy, za svůj text
 - Marker se automaticky převede na platební tlačítko — uživatel ho uvidí
 - NIKDY nevysvětluj co marker dělá, prostě ho přidej
@@ -502,7 +507,7 @@ NIKDY NEDĚLEJ:
       for (const match of sellMatches) {
         const photoId = parseInt(match[1]);
         const price = parseInt(match[2]);
-        if (!isNaN(photoId) && !isNaN(price) && price >= 199) {
+        if (!isNaN(photoId) && !isNaN(price) && price >= 49) {
           try {
             const { getUncachableStripeClient, isStripeConnected } = await import("./stripeClient");
             const connected = await isStripeConnected();
@@ -2214,12 +2219,22 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
       const isSubscribed = await storage.isUserSubscribed(userId);
       const instance = await storage.getAvatarInstance(userId);
       const botEnabled = isSubscribed && !!(instance?.botEnabled);
+      const capabilityLevel = instance?.capabilityLevel || 0;
+
+      const { getCapabilitiesForLevel, SUBSCRIPTION_PLANS } = await import("./stripeService");
+      const capabilities = getCapabilitiesForLevel(capabilityLevel);
+      const currentPlan = SUBSCRIPTION_PLANS.find(p => p.capabilityLevel === capabilityLevel);
+      const nextPlan = SUBSCRIPTION_PLANS.find(p => p.capabilityLevel === capabilityLevel + 1);
 
       const { unlocked, locked } = await storage.getBotWardrobe(userId);
 
       res.json({
         isSubscribed,
         botEnabled,
+        capabilityLevel,
+        capabilities,
+        currentPlan: currentPlan ? { key: currentPlan.key, name: currentPlan.name, emoji: currentPlan.emoji } : null,
+        nextPlan: nextPlan ? { key: nextPlan.key, name: nextPlan.name, emoji: nextPlan.emoji, priceMonthly: nextPlan.priceMonthly } : null,
         unlockedCount: unlocked.length,
         lockedCount: locked.length,
         totalCount: unlocked.length + locked.length,

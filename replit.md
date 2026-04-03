@@ -77,12 +77,18 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - After rebuilding, restart the "Start application" workflow to serve the new bundle.
 - Backend (Express/server) changes take effect immediately on restart without a rebuild.
 
-## E-Bot System
-- **Subscription Gate** (`client/src/pages/EBot.tsx`): Wardrobe + Ninna display behind Stripe subscription paywall.
-- **Webhook Auto-Unlock** (`server/webhookHandlers.ts`): On `checkout.session.completed`, auto-unlocks assets and enables/disables bot based on subscription status.
-- **Manager Overview Stats** (`GET /api/manager/overview`): Returns `isSubscribed`, `botEnabled`, `unlockedCount` per user (parallel fetch, no N+1).
-- **E-Bot Dashboard Panel** (`client/src/pages/ManagerDashboard.tsx`): In main header, always-visible badges show 👑 VIP subscribers, 🤖 bot-active users, 🔓 total unlocked assets.
-- **Storage Methods**: `getAllAvatarInstances()`, `getUnlockedAssetCountsByUser()` in `server/storage.ts`.
+## Virtual Twin / E-Bot System
+- **Twin Blueprint**: Full Virtual Twin system with 3 subscription tiers (BASIC=Level 1, VIP=Level 2, PREMIUM=Level 3).
+- **Capability Levels** (`server/stripeService.ts`): `TWIN_CAPABILITIES` maps level → feature flags (basicChat, purchaseHistory, skinUnlocking, proactiveRecommendations, notifications, visualCustomization, advancedCustomization, exclusiveContent, prioritySupport, planning).
+- **Subscription Gate** (`client/src/pages/EBot.tsx`): Wardrobe + Ninna display + tier capabilities panel behind Stripe subscription paywall.
+- **Tier UI** (`EBot.tsx`): Shows current tier badge, capabilities checklist (enabled/locked), upgrade button to next tier with price.
+- **Auto Avatar Elements** (`storage.ts`): `autoCreateAvatarElements()` auto-creates skin elements from purchased content items based on tags (outfit, hair, background, expression, accessory).
+- **Webhook Capability Assignment** (`webhookHandlers.ts`): On subscription activation, determines capability level from price tier and sets it. On content purchase, auto-creates avatar elements before unlocking.
+- **Individual Photo Sales**: Minimum price lowered to 49 CZK. AI prompt uses progressive pricing strategy (entry → standard → premium). Default suggested price changed from 249 to 99 CZK.
+- **Bot Status API** (`GET /api/bot/status`): Returns `capabilityLevel`, `capabilities` object, `currentPlan`, `nextPlan` (for upgrade prompts).
+- **Manager Overview Stats** (`GET /api/manager/overview`): Returns `isSubscribed`, `botEnabled`, `unlockedCount` per user.
+- **E-Bot Dashboard Panel** (`client/src/pages/ManagerDashboard.tsx`): In main header, always-visible badges show VIP subscribers, bot-active users, total unlocked assets.
+- **Storage Methods**: `getAllAvatarInstances()`, `getUnlockedAssetCountsByUser()`, `updateCapabilityLevel()`, `autoCreateAvatarElements()` in `server/storage.ts`.
 
 ## Chat Connection Error Handling
 - `client/src/hooks/use-chat.ts`: Exposes `connectionError` state and `clearError` function when SSE stream fails.

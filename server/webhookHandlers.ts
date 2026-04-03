@@ -41,9 +41,9 @@ export class WebhookHandlers {
             console.log(`[Webhook] Payment #${payment.id} completed successfully`);
 
             if (payment.userId) {
-              // ── E-Bot: Auto-unlock avatar assets ───────────────────────
               if (payment.contentItemId) {
                 try {
+                  await storage.autoCreateAvatarElements(payment.contentItemId);
                   const unlockedCount = await storage.unlockAssetsForPayment(
                     payment.userId,
                     payment.contentItemId,
@@ -60,7 +60,6 @@ export class WebhookHandlers {
                 }
               }
 
-              // ── Potvrzovací zpráva do chatu ────────────────────────────
               const convs = await storage.getConversationsByUser(payment.userId);
               if (convs.length > 0) {
                 const amountCzk = Math.round(payment.amount / 100);
@@ -100,17 +99,29 @@ export class WebhookHandlers {
             const user = allUsers.find(u => u.stripeCustomerId === customerId);
             if (user) {
               await storage.updateUser(user.id, { platform: "vip_subscriber" } as any);
-
-              // ── E-Bot: Aktivovat bot pro subscribera ─────────────────
               await storage.enableBot(user.id);
 
-              console.log(`[Webhook] Subscription activated for user #${user.id} (${user.name})`);
-              await storage.addManagerLog("subscription_activated", `Předplatné aktivováno pro ${user.name} (${sub.status}), E-Bot odemčen`);
+              let capLevel = 1;
+              try {
+                const stripe = await getUncachableStripeClient();
+                const items = sub.items?.data || [];
+                if (items.length > 0) {
+                  const priceAmount = items[0]?.price?.unit_amount || 0;
+                  if (priceAmount >= 99900) capLevel = 3;
+                  else if (priceAmount >= 59900) capLevel = 2;
+                  else capLevel = 1;
+                }
+              } catch (e) {}
+              await storage.updateCapabilityLevel(user.id, capLevel);
+
+              const tierNames: Record<number, string> = { 1: "BASIC Twin", 2: "VIP Twin", 3: "PREMIUM Twin" };
+              console.log(`[Webhook] Subscription activated for user #${user.id} (${user.name}), tier: ${tierNames[capLevel]}`);
+              await storage.addManagerLog("subscription_activated", `Předplatné ${tierNames[capLevel]} aktivováno pro ${user.name}, E-Bot odemčen`);
 
               const convs = await storage.getConversationsByUser(user.id);
               if (convs.length > 0) {
                 await storage.createMessage(convs[0].id, "assistant",
-                  `✅ Tvoje předplatné je aktivní! Jsem ráda, že jsi tu. 💋\n\n🤖 Odemkl ses přístup k mému **E-Botu** — teď mě najdeš v horním menu chatu. Tam si mě můžeš přizpůsobit podle svého vkusu… zatím mám jen základní outfit 😏`
+                  `✅ Tvoje předplatné **${tierNames[capLevel]}** je aktivní! Jsem ráda, že jsi tu. 💋\n\n🤖 Odemkl ses přístup k mému **Virtuálnímu Dvojčeti** — teď mě najdeš v horním menu chatu. Tam si mě můžeš přizpůsobit podle svého vkusu… zatím mám jen základní outfit 😏\n\n${capLevel >= 2 ? "💡 S tvou úrovní mám pro tebe i proaktivní doporučení fotek a nový obsah!" : "💡 Chceš víc? Upgrade na VIP odemkne proaktivní doporučení a vizuální customizaci!"}`
                 );
               }
             }

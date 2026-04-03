@@ -6,31 +6,82 @@ export const SUBSCRIPTION_PLANS = [
   {
     key: "basic",
     name: "Ninna Ray BASIC",
-    description: "Přístup k exkluzivnímu obsahu každý týden, prioritní odpovědi v chatu",
+    description: "Základní Twin s chatem a šatníkem skinů",
     priceMonthly: 29900,
-    features: ["Exkluzivní fotky každý týden", "Prioritní odpovědi v chatu", "Přístup k archivu obsahu"],
+    capabilityLevel: 1,
+    features: ["Základní chat s Ninnou", "Přehled zakoupených fotek", "Odemykání skinů z fotek"],
     emoji: "💗",
     badge: "",
   },
   {
     key: "vip",
     name: "Ninna Ray VIP",
-    description: "Neomezený přístup ke všemu obsahu + bonus obsah každý měsíc",
+    description: "Premium Twin — proaktivní doporučení, vizuální customizace",
     priceMonthly: 59900,
-    features: ["Vše z BASIC", "Neomezené fotky a videa", "Bonus obsah každý měsíc", "VIP odznak v chatu"],
+    capabilityLevel: 2,
+    features: ["Vše z BASIC", "Proaktivní doporučení fotek", "Upozornění na novinky a akce", "Základní vizuální customizace"],
     emoji: "💋",
     badge: "Nejpopulárnější",
   },
   {
     key: "premium",
     name: "Ninna Ray PREMIUM",
-    description: "Vše + custom obsah na míru a přímá komunikace s prioritou",
+    description: "VIP Twin — plná customizace, exkluzivní obsah, prioritní podpora",
     priceMonthly: 99900,
-    features: ["Vše z VIP", "Custom obsah na míru (1x měsíčně)", "Nejvyšší priorita odpovědí", "Exkluzivní série obsahu"],
+    capabilityLevel: 3,
+    features: ["Vše z VIP", "Pokročilá vizuální customizace", "Přístup k exkluzivnímu obsahu", "Prioritní podpora přes Twina", "Plánování focení a eventů"],
     emoji: "👑",
     badge: "Premium",
   },
 ];
+
+export interface TwinCapabilities {
+  basicChat: boolean;
+  purchaseHistory: boolean;
+  skinUnlocking: boolean;
+  proactiveRecommendations: boolean;
+  notifications: boolean;
+  visualCustomization: boolean;
+  advancedCustomization: boolean;
+  exclusiveContent: boolean;
+  prioritySupport: boolean;
+  planning: boolean;
+}
+
+export const TWIN_CAPABILITIES: Record<number, TwinCapabilities> = {
+  0: {
+    basicChat: false, purchaseHistory: false, skinUnlocking: false,
+    proactiveRecommendations: false, notifications: false, visualCustomization: false,
+    advancedCustomization: false, exclusiveContent: false, prioritySupport: false, planning: false,
+  },
+  1: {
+    basicChat: true, purchaseHistory: true, skinUnlocking: true,
+    proactiveRecommendations: false, notifications: false, visualCustomization: false,
+    advancedCustomization: false, exclusiveContent: false, prioritySupport: false, planning: false,
+  },
+  2: {
+    basicChat: true, purchaseHistory: true, skinUnlocking: true,
+    proactiveRecommendations: true, notifications: true, visualCustomization: true,
+    advancedCustomization: false, exclusiveContent: false, prioritySupport: false, planning: false,
+  },
+  3: {
+    basicChat: true, purchaseHistory: true, skinUnlocking: true,
+    proactiveRecommendations: true, notifications: true, visualCustomization: true,
+    advancedCustomization: true, exclusiveContent: true, prioritySupport: true, planning: true,
+  },
+};
+
+export function getCapabilitiesForLevel(level: number): TwinCapabilities {
+  return TWIN_CAPABILITIES[Math.min(level, 3)] || TWIN_CAPABILITIES[0];
+}
+
+export function getPlanByKey(key: string) {
+  return SUBSCRIPTION_PLANS.find(p => p.key === key);
+}
+
+export function getPlanByCapabilityLevel(level: number) {
+  return SUBSCRIPTION_PLANS.find(p => p.capabilityLevel === level);
+}
 
 export class StripeService {
   async createCustomer(name: string, metadata: Record<string, string> = {}) {
