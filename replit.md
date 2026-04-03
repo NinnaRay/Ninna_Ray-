@@ -69,6 +69,25 @@ Preferred communication style: Simple, everyday language. Czech language UI.
 - **`express-session`**: For session management and authentication.
 - **Recharts**: For data visualization charts in analytics dashboard.
 
+## Critical Build Note
+
+**`NODE_ENV=production` is set globally in this Replit environment.** This means:
+- The Express server serves from `dist/public/` (pre-built Vite bundle), NOT from the Vite dev server.
+- **Every frontend source code change requires a rebuild:** `NODE_ENV=production npx vite build`
+- After rebuilding, restart the "Start application" workflow to serve the new bundle.
+- Backend (Express/server) changes take effect immediately on restart without a rebuild.
+
+## E-Bot System
+- **Subscription Gate** (`client/src/pages/EBot.tsx`): Wardrobe + Ninna display behind Stripe subscription paywall.
+- **Webhook Auto-Unlock** (`server/webhookHandlers.ts`): On `checkout.session.completed`, auto-unlocks assets and enables/disables bot based on subscription status.
+- **Manager Overview Stats** (`GET /api/manager/overview`): Returns `isSubscribed`, `botEnabled`, `unlockedCount` per user (parallel fetch, no N+1).
+- **E-Bot Dashboard Panel** (`client/src/pages/ManagerDashboard.tsx`): In main header, always-visible badges show 👑 VIP subscribers, 🤖 bot-active users, 🔓 total unlocked assets.
+- **Storage Methods**: `getAllAvatarInstances()`, `getUnlockedAssetCountsByUser()` in `server/storage.ts`.
+
+## Chat Connection Error Handling
+- `client/src/hooks/use-chat.ts`: Exposes `connectionError` state and `clearError` function when SSE stream fails.
+- `client/src/pages/Chat.tsx`: Renders a visible red error banner (`data-testid="text-connection-error"`) when connection fails — no longer silently swallowed.
+
 ## Analytics & Reporting System
 - **Analytics Engine** (`server/analytics-engine.ts`): Computes daily timelines, sales funnel, content performance, user LTV, and automated daily reports
 - **Dashboard Tabs** (`/manager`):

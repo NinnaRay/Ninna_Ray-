@@ -57,6 +57,8 @@ export interface IStorage {
   disableBot(userId: number): Promise<void>;
   getUserUnlockedAssetIds(userId: number): Promise<number[]>;
   unlockAssetsForPayment(userId: number, contentItemId: number, paymentId: number): Promise<number>;
+  getAllAvatarInstances(): Promise<AvatarInstance[]>;
+  getUnlockedAssetCountsByUser(): Promise<Map<number, number>>;
   getBotWardrobe(userId: number): Promise<{ unlocked: AvatarElement[]; locked: AvatarElement[] }>;
   getUserBotContext(userId: number): Promise<{ hasBot: boolean; unlockedCount: number; totalCount: number; outfitNames: string[] }>;
 }
@@ -374,6 +376,19 @@ export class DatabaseStorage implements IStorage {
       .from(userUnlockedAssets)
       .where(eq(userUnlockedAssets.userId, userId));
     return rows.map(r => r.avatarElementId);
+  }
+
+  async getAllAvatarInstances(): Promise<AvatarInstance[]> {
+    return db.select().from(avatarInstances);
+  }
+
+  async getUnlockedAssetCountsByUser(): Promise<Map<number, number>> {
+    const rows = await db.select().from(userUnlockedAssets);
+    const map = new Map<number, number>();
+    for (const row of rows) {
+      map.set(row.userId, (map.get(row.userId) || 0) + 1);
+    }
+    return map;
   }
 
   async unlockAssetsForPayment(userId: number, contentItemId: number, paymentId: number): Promise<number> {

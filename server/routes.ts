@@ -1076,9 +1076,13 @@ NIKDY NEDĚLEJ:
   // Get full manager overview — all users with their profiles
   app.get("/api/manager/overview", requireOwner, async (_req, res) => {
     try {
-      const allUsers = await storage.getAllUsers();
-      const allConvs = await storage.getAllConversations();
-      const allMsgs = await storage.getAllMessages();
+      const [allUsers, allConvs, allMsgs, allAvatarInstances, unlockedCounts] = await Promise.all([
+        storage.getAllUsers(),
+        storage.getAllConversations(),
+        storage.getAllMessages(),
+        storage.getAllAvatarInstances(),
+        storage.getUnlockedAssetCountsByUser(),
+      ]);
 
       const convsByUser: Record<number, number> = {};
       for (const conv of allConvs) {
@@ -1097,19 +1101,28 @@ NIKDY NEDĚLEJ:
         }
       }
 
-      const result = allUsers.map(u => ({
-        id: u.id,
-        name: u.name,
-        messageCount: u.messageCount,
-        createdAt: u.createdAt,
-        conversations: convsByUser[u.id] || 0,
-        totalMessages: msgsByUser[u.id]?.count || 0,
-        lastActivity: msgsByUser[u.id]?.lastAt || null,
-        aiProfile: u.aiProfile || null,
-        aiProfileUpdatedAt: u.aiProfileUpdatedAt || null,
-        stripeCustomerId: u.stripeCustomerId || null,
-        platform: u.platform || "direct",
-      }));
+      const botInstanceMap = new Map(allAvatarInstances.map(i => [i.userId, i]));
+
+      const result = allUsers.map(u => {
+        const botInstance = botInstanceMap.get(u.id);
+        const isSubscribed = u.platform === "vip_subscriber" || u.isPremium === true;
+        return {
+          id: u.id,
+          name: u.name,
+          messageCount: u.messageCount,
+          createdAt: u.createdAt,
+          conversations: convsByUser[u.id] || 0,
+          totalMessages: msgsByUser[u.id]?.count || 0,
+          lastActivity: msgsByUser[u.id]?.lastAt || null,
+          aiProfile: u.aiProfile || null,
+          aiProfileUpdatedAt: u.aiProfileUpdatedAt || null,
+          stripeCustomerId: u.stripeCustomerId || null,
+          platform: u.platform || "direct",
+          isSubscribed,
+          botEnabled: isSubscribed && !!(botInstance?.botEnabled),
+          unlockedCount: unlockedCounts.get(u.id) || 0,
+        };
+      });
 
       // Sort: hot first, then by last activity
       result.sort((a, b) => {

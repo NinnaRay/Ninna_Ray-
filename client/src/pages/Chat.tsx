@@ -20,7 +20,7 @@ export default function Chat() {
     enabled: !!user?.id,
     retry: false,
   });
-  const { messages, sendMessage, isTyping, initConversation, activeConversationId } = useChat({ userId: user?.id });
+  const { messages, sendMessage, isTyping, initConversation, activeConversationId, connectionError, clearError } = useChat({ userId: user?.id });
   const [inputValue, setInputValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -152,6 +152,20 @@ export default function Chat() {
 
         {isTyping && !messages.find(m => m.isTyping) && (
           <ChatBubble role="assistant" content="" isTyping={true} />
+        )}
+
+        {connectionError && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center gap-2 bg-red-500/15 border border-red-500/30 rounded-2xl px-4 py-3 text-sm text-red-300"
+            data-testid="text-connection-error"
+          >
+            <span className="text-base">⚠️</span>
+            <span className="flex-1">{connectionError}</span>
+            <button onClick={clearError} className="text-red-400 hover:text-red-200 transition-colors text-xs font-bold ml-2">✕</button>
+          </motion.div>
         )}
         
         <div ref={scrollRef} className="h-4" />

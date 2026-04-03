@@ -62,6 +62,9 @@ type ManagerUser = {
   aiProfileUpdatedAt: string | null;
   stripeCustomerId?: string | null;
   platform?: string;
+  isSubscribed?: boolean;
+  botEnabled?: boolean;
+  unlockedCount?: number;
 };
 
 type ContentItem = {
@@ -410,11 +413,22 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup, initialFilte
                       <p className="font-semibold text-sm truncate">{group.name}</p>
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ml-1 ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span className="text-[10px] text-neutral-500">{group.totalMessages} zpráv</span>
                       {p && <span className="text-[10px] text-neutral-600">· {p.engagementScore}%</span>}
                       {stratLabel && <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${p?.strategy === "sell" ? "bg-yellow-500/20 text-yellow-400" : p?.strategy === "hook" ? "bg-purple-500/20 text-purple-400" : "bg-blue-500/20 text-blue-400"}`}>{stratLabel}</span>}
                       {p?.relationshipStage && <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${p.relationshipStage === "monetizace" ? "bg-yellow-500/15 text-yellow-400" : p.relationshipStage === "stabilní" ? "bg-emerald-500/15 text-emerald-400" : "bg-neutral-700 text-neutral-400"}`}>{p.relationshipStage}</span>}
+                      {group.sessions.some(s => s.isSubscribed) && (
+                        <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-500/20 text-amber-400" title="VIP předplatné">👑</span>
+                      )}
+                      {group.sessions.some(s => s.botEnabled) && (
+                        <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-pink-500/20 text-pink-400" title="E-Bot aktivní">🤖</span>
+                      )}
+                      {(group.sessions.reduce((s, u) => s + (u.unlockedCount || 0), 0)) > 0 && (
+                        <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-violet-500/20 text-violet-400" title="Odemčený obsah">
+                          🔓{group.sessions.reduce((s, u) => s + (u.unlockedCount || 0), 0)}
+                        </span>
+                      )}
                     </div>
                     {p?.mainDriver && <p className="text-[10px] text-neutral-400 truncate mt-0.5">{p.mainDriver}</p>}
                     {group.sessions[0]?.lastActivity && <p className="text-[9px] text-neutral-600 mt-0.5">🕐 {formatDistanceToNow(new Date(group.sessions[0].lastActivity), { locale: cs, addSuffix: true })}</p>}
@@ -484,9 +498,25 @@ function CustomersTab({ users, qc, selectedGroup, setSelectedGroup, initialFilte
                       <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>{cfg.label}</span>
                       <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${stratCfg.cls}`}>{stratCfg.icon} {stratCfg.label}</span>
                       <span className="text-xs text-neutral-500">{p.engagementScore}% eng · {p.buyingPotential}</span>
+                      {primaryUser?.isSubscribed && <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400">👑 VIP</span>}
+                      {primaryUser?.botEnabled && <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-pink-500/20 border border-pink-500/30 text-pink-400">🤖 E-Bot ON</span>}
                       {p.lastAnalyzed && <span className="text-[9px] text-neutral-600 ml-auto">🕐 {formatDistanceToNow(new Date(p.lastAnalyzed), { locale: cs, addSuffix: true })}</span>}
                     </div>
                     <ScoreBar score={p.engagementScore} />
+
+                    {(primaryUser?.isSubscribed || (primaryUser?.unlockedCount ?? 0) > 0) && (
+                      <div className="bg-pink-500/5 border border-pink-500/20 rounded-xl p-3">
+                        <p className="text-[10px] font-bold text-pink-400 uppercase tracking-widest mb-2">🤖 E-Bot stav</p>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <div className={`w-2 h-2 rounded-full ${primaryUser?.botEnabled ? "bg-pink-400 animate-pulse" : "bg-neutral-600"}`} />
+                            <span className="text-[10px] text-neutral-300">{primaryUser?.botEnabled ? "Bot aktivní" : "Bot neaktivní"}</span>
+                          </div>
+                          <span className="text-[10px] text-violet-400">🔓 {primaryUser?.unlockedCount || 0} odemčeno</span>
+                          <span className="text-[10px] text-amber-400">👑 {primaryUser?.isSubscribed ? "Předplatné aktivní" : "Bez předplatného"}</span>
+                        </div>
+                      </div>
+                    )}
 
                     {(p.mainDriver || p.nextAction) && (
                       <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
@@ -999,6 +1029,9 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
   const warmCount = groups.filter(g => g.bestStatus === "warm").length;
   const coldCount = groups.filter(g => g.bestStatus === "cold").length;
   const newCount = groups.filter(g => g.bestStatus === "new").length;
+  const subscribedCount = users.filter(u => u.isSubscribed).length;
+  const botEnabledCount = users.filter(u => u.botEnabled).length;
+  const totalUnlocked = users.reduce((s, u) => s + (u.unlockedCount || 0), 0);
   const avgEngagement = withProfiles.reduce((s, u) => s + ((u.aiProfile as any)?.engagementScore || 0), 0) / (analyzed || 1);
 
   const stratCounts = { build: 0, sell: 0, hook: 0 };
@@ -1115,6 +1148,24 @@ function OverviewTab({ users, onNavigate }: { users: ManagerUser[]; onNavigate?:
           )}
         </div>
       )}
+
+      <div className="bg-pink-500/5 border border-pink-500/20 rounded-xl p-3" data-testid="ebot-stats-panel">
+        <p className="text-[10px] font-bold text-pink-400 uppercase tracking-widest mb-2">🤖 E-Bot Ekosystém</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="text-center">
+            <p className="text-base font-bold text-amber-400">{subscribedCount}</p>
+            <p className="text-[9px] text-neutral-500">👑 VIP předplatné</p>
+          </div>
+          <div className="text-center">
+            <p className="text-base font-bold text-pink-400">{botEnabledCount}</p>
+            <p className="text-[9px] text-neutral-500">🤖 Bot aktivní</p>
+          </div>
+          <div className="text-center">
+            <p className="text-base font-bold text-violet-400">{totalUnlocked}</p>
+            <p className="text-[9px] text-neutral-500">🔓 Odemčeno</p>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-4 gap-2">
         {([
@@ -2650,6 +2701,17 @@ export default function ManagerDashboard() {
             <p className="text-neutral-500 text-[10px]">{users.length} zákazníků</p>
           </div>
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Engine aktivní" />
+          <div className="flex items-center gap-2 ml-2" data-testid="ebot-stats-panel">
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 text-amber-400" title="VIP uživatelé">
+              👑 {users.filter(u => u.isSubscribed).length}
+            </span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-pink-500/20 border border-pink-500/30 text-pink-400" title="E-Bot aktivní">
+              🤖 {users.filter(u => u.botEnabled).length}
+            </span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-500/20 border border-violet-500/30 text-violet-400" title="Odemčený obsah">
+              🔓 {users.reduce((s, u) => s + (u.unlockedCount || 0), 0)}
+            </span>
+          </div>
         </div>
         <button onClick={logout} data-testid="button-logout" className="text-neutral-500 hover:text-white text-xs transition-colors">Odhlásit</button>
       </div>
