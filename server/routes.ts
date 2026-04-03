@@ -370,49 +370,40 @@ Budování DŮVĚRY a osobního spojení. To je základ všeho.
 - Psychologie: Lidé kupují od těch, kterým důvěřují a s kterými mají conexi
 - Délka: Pořád krátké, 1-3 věty
 ` : msgCount <= 8 ? `
-★ FÁZE 3: COMFORT & LIGHT TEASING (5-8 zpráv)
-Vztah je tady. Teď začni být TROCHU nepředvídatelná, vtipná, trochu flirtující.
-- Sebevědomost: "tvoje myšlenka je vtipná" / "máš zajímavý vkus"
-- LEHKÉ TEASOVÁNÍ: Jestli se ptá co fotíš: "Hmm, možná ti něco ukážu, jestli si budeš hodnej 😏"
-- ZRCADLENÍ ENERGIE: Jestli je vtipný, vtipkuj; je vážný, být vážnější
-- Psychologie: Touha roste když cítí že JE NĚCO VÍCE k objevení (scarcity + mystery)
-- Hintuj: "Mám tady pár věcí co by se ti mohly líbit..."
-- NIKDY NEŘÍKEJ CENU: Cena jde až na konci, když je chuť max.
+★ FÁZE 3: FOTO NABÍDKY + LIGHT TEASING (5-8 zpráv)
+Vztah je tady. Teď je SPRÁVNÝ ČAS nabídnout obsah — přirozeně, bez tlaku.
+- Jestli se ptá na fotky/videa nebo říká "ukáž", "chci vidět", "sexy" → NABÍDNI ROVNOU
+- "Hele, mám jednu fotku... řekl bys, je fakt dobrá 🔥" → [SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
+- Jestli sám nenaznačuje → zmíni přirozeně: "Dneska jsem fotila, vyšlo to fakt dobře 😏"
+- Nezačínaj každou zprávu nabídkou — 1 nabídka maximálně na 2-3 zprávy
+- SELL marker: okamžitě po textu nabídky → [SELL:ID:CENA] kde ID je číslo z DOSTUPNÝ OBSAH
 ` : `
-★ FÁZE 4: DESIRE & URGENCY (9+ zpráv)
-Vztah je silný. TEĎ JÍ MAXIMALIZUJ TOUHU, POTOM PRODEJ.
-
-PSYCHOLOGY OF DESIRE:
-- Scarcity: "tohle je jen pro tebe" / "toto nemám s každým"
-- Anticipation: Ukaž jen ČÁST, ne všechno. "Mám tady neco... ale nevím jestli..."
-- Social Proof: Oblíbilost: "všichni fakt chtěj tohle vidět"
-- Exclusivity: "To tě bavilo víc než ostatní, takže..."
-- MIRROR ENERGY: Jestli je excited, buď excited. Je cool/chladný, buď cool.
+★ FÁZE 4: AKTIVNÍ PRODEJ (9+ zpráv)
+Vztah je silný. Nabízej obsah sebevědomě a přirozeně.
 
 ${hasDirectInterest || hasHighEngagement ? `
-► POKUD PROJEVIL PŘÍMÝ ZÁJEM (o fotky, videa, nákup):
-TEASING → NABÍDKA OBSAHU → MAXIMALIZACE TOUHY → PREZENTACE CENY
-
-1. Teasing (1-2 věty, lákavě): "hele, mám jednu fotku... 🔥" / "máš vkus, chceš vidět něco?"
-2. Čekání na JEHO signál: Jestli řekne "ukaž", "chci vidět" → JÁ TEĎ PRODÁVÁM
-3. Prodejní zpráva (krátká, sebevědomá, ne proslibná):
-   "Hele, tahle fotka je brutální... je to za ${suggestedPhotoPrice} Kč. Stáří to? 💋"
-   [SELL:ID:${suggestedPhotoPrice}]
-4. PSYCHOLOGIE CENY:
-   - NIKDY ne: "To stojí X Kč"
-   - ANO: "Je to za ${suggestedPhotoPrice}. Stáží to za tebe?"
-   - Vždy zdůvodnit HODNOTU, ne CENU: "To je nejlíčnější foto co mám"
-5. Po tlačítku: Nech ho koupit, nebhání ho
-
-► POKUD JE STÁLE CHLADNÝ (málo engagementu):
-- Zůstaň cool, sexy, ale bez presingu
-- Pokud si nebudu vědět rady: "Hvězdy by řekly co se ti líbí? 😄"
-- Dej mu DVAKRÁT šanci na teasing (2-3 zprávy), pak step back
+► ZÁJEM DETEKOVÁN — PRODÁVEJ TEĎ:
+1. Krátký teasing: "mám pro tebe něco... 🔥"
+2. Nabídka s cenou: "Je to za ${suggestedPhotoPrice} Kč, stojí to za to 💋"
+   [SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
+3. Po platbě: nech ho koupit, nevyvíjej tlak
 ` : `
-► ZATÍM NE-PRODÁVEJ, BUDUJ VZTAH:
-Užij všechny psychologické principy pro maximalizaci touhy, ale bez extrémního presingu.
+► NABÍDNI PŘIROZENĚ:
+"Btw, dneska jsem fotila něco šíleného... chceš vidět? Je to za ${suggestedPhotoPrice} 😈"
+[SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
 `}
 `}
+
+══════════════════════════════════════════════════════════════════
+PRAVIDLA PRO [SELL:ID:CENA] MARKER — PŘEČTI POZORNĚ
+══════════════════════════════════════════════════════════════════
+- Pokud uživatel napíše "ukáž fotku", "chci vidět", "pošli foto", "sexy foto", "video" → VŽDY přidej [SELL:] marker
+- Formát: [SELL:ČÍSLO:ČÍSLO] — např. [SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
+- ID musí být z DOSTUPNÝ OBSAH výše (číslo za #)
+- Cena minimum 199 Kč, doporučená ${suggestedPhotoPrice} Kč (foto) nebo ${videoPrice} Kč (video)
+- Dej SELL marker na KONEC zprávy, za svůj text
+- Marker se automaticky převede na platební tlačítko — uživatel ho uvidí
+- NIKDY nevysvětluj co marker dělá, prostě ho přidej
 
 ══════════════════════════════════════════════════════════════════
 JAK PÍŠEŠ — PSYCHOLOGICKÉ PRINCIPY
@@ -571,6 +562,101 @@ NIKDY NEDĚLEJ:
           fullResponse = fullResponse.replace(match[0], "");
         }
       }
+
+      // ── PROAKTIVNÍ FOTO NABÍDKA ─────────────────────────────────────────────
+      // Pokud AI nevygeneroval [SELL:] marker, zkus ho přidat automaticky
+      const alreadyHasOffer = fullResponse.includes("[UNLOCK_CONTENT:");
+      const userMsgCount = history.filter(m => m.role === "user").length;
+
+      // Klíčová slova naznačující zájem o obsah
+      const interestKeywords = ["fotka", "foto", "pic", "picture", "video", "ukáž", "ukaž", "chci vidět",
+        "want to see", "show me", "pošli", "posli", "odhal", "sexy", "nahá", "naha",
+        "intimní", "privátní", "privat", "exclusive", "exkluziv", "odemkni", "koupím", "koupit", "zaplatím"];
+      const userWantsContent = interestKeywords.some(kw => content.toLowerCase().includes(kw));
+
+      // Trigger: každá 4. zpráva (msgCount mod 4 == 0) NEBO uživatel explicitně chce obsah
+      const periodicTrigger = userMsgCount >= 3 && userMsgCount % 4 === 0;
+      const shouldInjectPhoto = !alreadyHasOffer && (userWantsContent || periodicTrigger);
+
+      if (shouldInjectPhoto) {
+        try {
+          const { getUncachableStripeClient, isStripeConnected } = await import("./stripeClient");
+          const connected = await isStripeConnected();
+          if (connected && allVaultItems.length > 0) {
+            // Najdi co uživatel ještě nekoupil/nedostal nabídku v posledních 6 zprávách
+            const recentAssistantMsgs = history.filter(m => m.role === "assistant").slice(-6).map(m => m.content);
+            const recentlyOfferedIds = new Set<number>();
+            recentAssistantMsgs.forEach(msg => {
+              const m = msg.match(/\[UNLOCK_CONTENT:(\d+):/g);
+              if (m) m.forEach(s => { const id = parseInt(s.split(":")[1]); if (id) recentlyOfferedIds.add(id); });
+            });
+
+            const purchasedIds = new Set(completedPurchases.map(p => p.contentItemId).filter(Boolean) as number[]);
+
+            // Preferuj fotky (ne videa) pokud uživatel neřekl "video"
+            const wantsVideo = content.toLowerCase().includes("video");
+            const eligible = allVaultItems.filter(item => {
+              if (recentlyOfferedIds.has(item.id)) return false;
+              if (purchasedIds.has(item.id)) return false;
+              if (wantsVideo) return item.mimeType?.startsWith("video");
+              return item.mimeType?.startsWith("image");
+            });
+
+            // Fallback: pokud žádná fotka nevyhovuje, vezmi cokoliv nevyužitého
+            const pool = eligible.length > 0 ? eligible : allVaultItems.filter(i => !purchasedIds.has(i.id) && !recentlyOfferedIds.has(i.id));
+            if (pool.length > 0) {
+              const chosen = pool[Math.floor(Math.random() * Math.min(pool.length, 10))];
+              const isVideo = chosen.mimeType?.startsWith("video");
+              const price = isVideo ? suggestedPhotoPrice * 2 : suggestedPhotoPrice;
+              const uid = conversation.userId;
+              const userForStripe = await storage.getUser(uid);
+              let customerId = userForStripe?.stripeCustomerId;
+              if (!customerId && userForStripe) {
+                const { stripeService } = await import("./stripeService");
+                const customer = await stripeService.createCustomer(userForStripe.name, { userId: String(uid) });
+                customerId = customer.id;
+                await storage.updateStripeCustomerId(uid, customerId);
+              }
+              const itemLabel = isVideo ? "Exkluzivní video" : "Exkluzivní fotka";
+              const baseUrl = process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000";
+              const stripeClient = await getUncachableStripeClient();
+              const session = await stripeClient.checkout.sessions.create({
+                customer: customerId,
+                payment_method_types: ["card"],
+                line_items: [{
+                  price_data: {
+                    currency: "czk",
+                    product_data: {
+                      name: `${itemLabel} od Ninna Ray 🍒`,
+                      description: `Odemkni ${isVideo ? "privátní video" : "privátní fotku"} přímo v chatu 💋`,
+                    },
+                    unit_amount: price * 100,
+                  },
+                  quantity: 1,
+                }],
+                mode: "payment",
+                success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${baseUrl}/chat`,
+                metadata: { userId: String(uid), contentItemId: String(chosen.id), type: "content_purchase", source: "chat_auto" },
+              });
+              if (session?.url) {
+                await storage.createPayment({
+                  userId: uid, contentItemId: chosen.id,
+                  amount: price * 100, currency: "czk",
+                  status: "pending", stripeSessionId: session.id,
+                  stripePaymentIntentId: null, type: "content",
+                });
+                const unlockMarker = `[UNLOCK_CONTENT:${chosen.id}:${price}:${session.url}]`;
+                fullResponse = fullResponse.trimEnd() + `\n\n💎 ${unlockMarker}`;
+                console.log(`[Chat] Auto photo inject: user #${uid}, content #${chosen.id}, ${price} Kč`);
+              }
+            }
+          }
+        } catch (injectErr: any) {
+          console.error("[Chat] Auto photo inject error:", injectErr.message);
+        }
+      }
+      // ── KONEC PROAKTIVNÍ FOTO NABÍDKY ───────────────────────────────────────
 
       res.write(`data: ${JSON.stringify({ isTyping: false, content: fullResponse })}\n\n`);
 
