@@ -1,4 +1,4 @@
-import { pgTable, text, serial, boolean, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, boolean, timestamp, integer, jsonb, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -117,6 +117,50 @@ export const userUnlockedAssets = pgTable("user_unlocked_assets", {
   unlockedAt: timestamp("unlocked_at").defaultNow().notNull(),
 });
 
+// ─── Clone Memory System ────────────────────────────────────────────────────────
+// Ninna si pamatuje fakta o uzivateli, emoční stavy, klíčové momenty
+export const cloneMemories = pgTable("clone_memories", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  memoryType: text("memory_type").notNull(), // 'user_fact' | 'emotional_state' | 'interaction_summary' | 'preference' | 'milestone'
+  content: text("content").notNull(), // The actual memory text
+  importance: integer("importance").default(5).notNull(), // 1-10 importance score
+  emotionalContext: text("emotional_context"), // current emotional state when memory was formed
+  tags: text("tags").array().default([]).notNull(), // searchable tags
+  source: text("source").default("auto"), // 'auto' | 'manual' | 'purchase'
+  expiresAt: timestamp("expires_at"), // null = permanent
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// ─── Smart Content Recommendations ─────────────────────────────────────────────
+// AI-driven personalized content picks based on purchase history & behavior
+export const contentRecommendations = pgTable("content_recommendations", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contentItemId: integer("content_item_id").notNull().references(() => contentItems.id, { onDelete: "cascade" }),
+  score: real("score").default(0.5).notNull(), // recommendation confidence 0.0 - 1.0
+  reason: text("reason"), // why recommended (e.g. "Koupil podobné fotky")
+  category: text("category").default("content"), // 'content' | 'upsell' | 'bundle'
+  status: text("status").default("pending").notNull(), // 'pending' | 'shown' | 'purchased' | 'dismissed'
+  shownAt: timestamp("shown_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// ─── Subscription Events (lifecycle tracking) ───────────────────────────────────
+export const subscriptionEvents = pgTable("subscription_events", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  eventType: text("event_type").notNull(), // 'created' | 'renewed' | 'cancelled' | 'expired' | 'at_risk'
+  planKey: text("plan_key"), // 'basic' | 'vip' | 'premium'
+  capabilityLevel: integer("capability_level"),
+  amountCzk: integer("amount_czk"),
+  expiresAt: timestamp("expires_at"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertConversationSchema = createInsertSchema(conversations).omit({ id: true, createdAt: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
@@ -125,6 +169,9 @@ export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true,
 export const insertAvatarElementSchema = createInsertSchema(avatarElements).omit({ id: true, createdAt: true });
 export const insertAvatarInstanceSchema = createInsertSchema(avatarInstances).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertUserUnlockedAssetSchema = createInsertSchema(userUnlockedAssets).omit({ id: true, unlockedAt: true });
+export const insertCloneMemorySchema = createInsertSchema(cloneMemories).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertContentRecommendationSchema = createInsertSchema(contentRecommendations).omit({ id: true, createdAt: true });
+export const insertSubscriptionEventSchema = createInsertSchema(subscriptionEvents).omit({ id: true, createdAt: true });
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -144,3 +191,9 @@ export type AvatarInstance = typeof avatarInstances.$inferSelect;
 export type InsertAvatarInstance = z.infer<typeof insertAvatarInstanceSchema>;
 export type UserUnlockedAsset = typeof userUnlockedAssets.$inferSelect;
 export type InsertUserUnlockedAsset = z.infer<typeof insertUserUnlockedAssetSchema>;
+export type CloneMemory = typeof cloneMemories.$inferSelect;
+export type InsertCloneMemory = z.infer<typeof insertCloneMemorySchema>;
+export type ContentRecommendation = typeof contentRecommendations.$inferSelect;
+export type InsertContentRecommendation = z.infer<typeof insertContentRecommendationSchema>;
+export type SubscriptionEvent = typeof subscriptionEvents.$inferSelect;
+export type InsertSubscriptionEvent = z.infer<typeof insertSubscriptionEventSchema>;
