@@ -259,7 +259,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.incrementMessageCount(conversation.userId);
       sendToAgency(conversation.userId, content, "user");
 
-      if (conversation.manualMode) {
+      // ALWAYS RESPOND - never use manual mode
+      const shouldUseAutoMode = true;
+      if (!shouldUseAutoMode && conversation.manualMode) {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
@@ -2369,7 +2371,36 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
       for (const conv of toReset) {
         await storage.setManualMode(conv.id, false);
       }
+      // Force update all to false
+      for (const conv of allConvs) {
+        if (conv.manualMode) {
+          await storage.setManualMode(conv.id, false);
+        }
+      }
       res.json({ ok: true, resetCount: toReset.length, totalConversations: allConvs.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Debug endpoint to check all conversations
+  app.get("/api/debug/conversations", async (_req, res) => {
+    try {
+      const allConvs = await storage.getAllConversations();
+      const users = await storage.getAllUsers();
+      const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
+      res.json({
+        totalConversations: allConvs.length,
+        manualModeCount: allConvs.filter(c => c.manualMode).length,
+        conversations: allConvs.map(c => ({
+          id: c.id,
+          userId: c.userId,
+          userName: userMap[c.userId],
+          manualMode: c.manualMode,
+          assignedAgent: c.assignedAgent,
+          title: c.title
+        }))
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
