@@ -2361,5 +2361,19 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
     }
   });
 
+  // ─── Reset all conversations from manual mode ──────────────────────────────────
+  app.post("/api/admin/reset-manual-mode", requireOwner, async (_req, res) => {
+    try {
+      const allConvs = await storage.getAllConversations();
+      const toReset = allConvs.filter(c => c.manualMode);
+      for (const conv of toReset) {
+        await storage.setManualMode(conv.id, false);
+      }
+      res.json({ ok: true, resetCount: toReset.length, totalConversations: allConvs.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
