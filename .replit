@@ -63,4 +63,3 @@ integrations = ["javascript_openai_ai_integrations:2.0.0", "javascript_log_in_wi
 [userenv]
 
 [userenv.shared]
-STRIPE_SECRET_KEY = "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"
