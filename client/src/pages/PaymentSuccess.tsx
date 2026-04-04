@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Check, MessageCircle, AlertCircle, Loader } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function PaymentSuccess() {
   const [location, setLocation] = useLocation();
   const [sessionStatus, setSessionStatus] = useState<"loading" | "success" | "pending" | "error">("loading");
+  const queryClient = useQueryClient();
 
   // Extract query params from location
   const urlParams = new URLSearchParams(location.split("?")[1]);
@@ -47,15 +49,20 @@ export default function PaymentSuccess() {
     );
   }
 
-  // Auto-redirect to chat after 2 seconds (give webhook time to process)
+  // Auto-redirect to chat after 3 seconds
   useEffect(() => {
     if (sessionStatus === "success") {
       const timer = setTimeout(() => {
-        window.location.href = '/chat';
-      }, 2000);
+        // Clear all conversation caches to force refresh
+        queryClient.removeQueries({ queryKey: ['/api/conversations'] });
+        // Wait a moment then redirect with hard reload
+        setTimeout(() => {
+          window.location.href = '/chat';
+        }, 100);
+      }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [sessionStatus]);
+  }, [sessionStatus, queryClient]);
 
   if (sessionStatus === "error") {
     return (
