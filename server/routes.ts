@@ -2396,5 +2396,42 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
     }
   });
 
+  // Fix pending payments - manually process webhook for them
+  app.post("/api/admin/fix-pending-payments", async (_req, res) => {
+    try {
+      const allPayments = await storage.getAllPayments();
+      const pendingPayments = allPayments.filter(p => p.status === 'pending');
+      
+      for (const payment of pendingPayments) {
+        try {
+          // Unlock assets
+          if (payment.contentItemId && payment.userId) {
+            await storage.autoCreateAvatarElements(payment.contentItemId);
+            await storage.unlockAssetsForPayment(payment.userId, payment.contentItemId, payment.id);
+            
+            // Send unlock message
+            const convs = await storage.getConversationsByUser(payment.userId);
+            if (convs.length > 0) {
+              const item = await storage.getContentItem(payment.contentItemId);
+              const isVideo = item?.mimeType?.startsWith("video");
+              const amountCzk = Math.round(payment.amount / 100);
+              const confirmMsg = `✅ Platba ${amountCzk} Kč přijata! Tady máš svůj exkluzivní ${isVideo ? "video" : "obsah"} 💋🔓\n\n[UNLOCKED_CONTENT:${payment.contentItemId}]\n\n✨ Tohle se ti odemklo i v šatníku — mrkni na svojí Ninnu 😏`;
+              await storage.createMessage(convs[0].id, "assistant", confirmMsg);
+              
+              // Mark as completed
+              await storage.updatePaymentStatus(payment.id, 'completed');
+            }
+          }
+        } catch (err: any) {
+          console.error(`[FixPayments] Error processing payment ${payment.id}:`, err.message);
+        }
+      }
+      
+      res.json({ ok: true, processedCount: pendingPayments.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
