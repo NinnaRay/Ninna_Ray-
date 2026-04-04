@@ -59,7 +59,9 @@ export default function PaymentSuccess() {
             Nepodařilo se ověřit tvou platbu. Kontaktuj nás prosím.
           </p>
           <Button
-            onClick={() => setLocation("/chat")}
+            onClick={() => {
+              window.location.href = '/chat';
+            }}
             className="bg-gradient-to-r from-pink-500 to-purple-600"
             data-testid="button-back-to-chat-error"
           >
@@ -84,7 +86,10 @@ export default function PaymentSuccess() {
           {type === "subscription" ? "Díky! Tvé předplatné je aktivní. Těšíme se na tebe! 💋" : "Díky moc! Obsah je odemknutý. Ninna se na tebe už těší... 🔥"}
         </p>
         <Button
-          onClick={() => setLocation("/chat")}
+          onClick={() => {
+            // Hard reload to fetch latest messages
+            window.location.href = '/chat';
+          }}
           className="bg-gradient-to-r from-pink-500 to-purple-600 hover:opacity-90 text-white px-8"
           data-testid="button-back-to-chat"
         >
