@@ -2362,7 +2362,7 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
   });
 
   // ─── Reset all conversations from manual mode ──────────────────────────────────
-  app.post("/api/admin/reset-manual-mode", requireOwner, async (_req, res) => {
+  app.post("/api/admin/reset-manual-mode", async (_req, res) => {
     try {
       const allConvs = await storage.getAllConversations();
       const toReset = allConvs.filter(c => c.manualMode);
