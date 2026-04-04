@@ -526,19 +526,11 @@ NIKDY NEDĚLEJ:
               const stripeClient = await getUncachableStripeClient();
               const uid = conversation.userId;
               const userForStripe = await storage.getUser(uid);
-              let customerId = userForStripe?.stripeCustomerId;
-              if (!customerId && userForStripe) {
-                const { stripeService } = await import("./stripeService");
-                const customer = await stripeService.createCustomer(userForStripe.name, { userId: String(uid) });
-                customerId = customer.id;
-                await storage.updateStripeCustomerId(uid, customerId);
-              }
               const vaultItem = await storage.getContentItem(photoId);
               const isVideo = vaultItem?.mimeType?.startsWith("video");
               const itemLabel = isVideo ? "Exkluzivní video" : "Exkluzivní fotka";
               const baseUrl = process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000";
               const session = await stripeClient.checkout.sessions.create({
-                customer: customerId,
                 payment_method_types: ["card"],
                 line_items: [{
                   price_data: {
@@ -637,7 +629,6 @@ NIKDY NEDĚLEJ:
               const baseUrl = process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000";
               const stripeClient = await getUncachableStripeClient();
               const session = await stripeClient.checkout.sessions.create({
-                customer: customerId,
                 payment_method_types: ["card"],
                 line_items: [{
                   price_data: {
@@ -1746,7 +1737,6 @@ Vrať POUZE čistý JSON (bez markdown):
 
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const session = await stripe.checkout.sessions.create({
-        customer: customerId,
         payment_method_types: ['card'],
         line_items: [{
           price_data: {
