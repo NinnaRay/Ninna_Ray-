@@ -321,6 +321,10 @@ ${!botCtx.hasBot ? "- Nemá předplatné → zmíni E-Bot jako bonus k předplat
       const suggestedPhotoPrice = aiProfile?.suggestedPrice || 99;
       const videoPrice = Math.round(suggestedPhotoPrice * 1.8);
       const entryPrice = Math.max(49, Math.round(suggestedPhotoPrice * 0.5));
+      
+      // CRITICAL FIX: Only use actual photo/video IDs if they exist
+      const photoId = photos.length > 0 ? photos[0].id : null;
+      const videoId = videos.length > 0 ? videos[0].id : null;
 
       const msgCount = history.length;
       const userMsgs = history.filter(m => m.role === "user");
@@ -374,7 +378,7 @@ Budování DŮVĚRY a osobního spojení. To je základ všeho.
 ★ FÁZE 3: FOTO NABÍDKY + LIGHT TEASING (5-8 zpráv)
 Vztah je tady. Teď je SPRÁVNÝ ČAS nabídnout obsah — přirozeně, bez tlaku.
 - Jestli se ptá na fotky/videa nebo říká "ukáž", "chci vidět", "sexy" → NABÍDNI ROVNOU
-- "Hele, mám jednu fotku... je fakt dobrá, dám ti ji za ${entryPrice} Kč 🔥" → [SELL:${photos[0]?.id || 1}:${entryPrice}]
+- "Hele, mám jednu fotku... je fakt dobrá, dám ti ji za ${entryPrice} Kč 🔥" → [SELL:${photoId || 1}:${entryPrice}]
 - Pro běžné fotky: ${entryPrice}-${suggestedPhotoPrice} Kč, premium: ${suggestedPhotoPrice}-${videoPrice} Kč
 - Jestli sám nenaznačuje → zmíni přirozeně: "Dneska jsem fotila, vyšlo to fakt dobře 😏"
 - Nezačínaj každou zprávu nabídkou — 1 nabídka maximálně na 2-3 zprávy
@@ -388,27 +392,32 @@ ${hasDirectInterest || hasHighEngagement ? `
 ► ZÁJEM DETEKOVÁN — PRODÁVEJ TEĎ:
 1. Krátký teasing: "mám pro tebe něco... 🔥"
 2. Nabídka s nižší cenou: "Dám ti ji za ${entryPrice} Kč, stojí to za to 💋"
-   [SELL:${photos[0]?.id || 1}:${entryPrice}]
+   [SELL:${photoId || 1}:${entryPrice}]
 3. Po platbě: nabídni další za vyšší cenu (${suggestedPhotoPrice} Kč) — buduj postupně
 4. Předplatné zmíni jen jako "balíček na míru" po 3+ nákupech
 ` : `
 ► NABÍDNI PŘIROZENĚ:
 "Btw, dneska jsem fotila něco šíleného... chceš vidět? Je to jen za ${entryPrice} Kč 😈"
-[SELL:${photos[0]?.id || 1}:${entryPrice}]
+[SELL:${photoId || 1}:${entryPrice}]
 `}
 `}
 
 ══════════════════════════════════════════════════════════════════
 PRAVIDLA PRO [SELL:ID:CENA] MARKER — PŘEČTI POZORNĚ
 ══════════════════════════════════════════════════════════════════
+${photoId ? `
 - Pokud uživatel napíše "ukáž fotku", "chci vidět", "pošli foto", "sexy foto", "video" → VŽDY přidej [SELL:] marker
-- Formát: [SELL:ČÍSLO:ČÍSLO] — např. [SELL:${photos[0]?.id || 1}:${suggestedPhotoPrice}]
+- Formát: [SELL:ČÍSLO:ČÍSLO] — např. [SELL:${photoId}:${suggestedPhotoPrice}]
 - ID musí být z DOSTUPNÝ OBSAH výše (číslo za #)
 - Cena minimum 49 Kč, doporučená: entry ${entryPrice} Kč, standard ${suggestedPhotoPrice} Kč (foto), premium ${videoPrice} Kč (video)
 - STRATEGIE CEN: Začni nižší cenou (${entryPrice} Kč) → po nákupu nabídni dražší (${suggestedPhotoPrice} Kč) → premium (${videoPrice} Kč)
 - Dej SELL marker na KONEC zprávy, za svůj text
 - Marker se automaticky převede na platební tlačítko — uživatel ho uvidí
-- NIKDY nevysvětluj co marker dělá, prostě ho přidej
+- NIKDY nevysvětluj co marker dělá, prostě ho přidej` : `
+⚠️ ŽÁDNÉ FOTKY NEJSOU DOSTUPNÉ MOMENTÁLNĚ — NEGENRUJ SELL MARKER!
+- Pokud user chce koupit nebo vidět fotky: reaguj přirozeně
+- Řekni: "Dneska jsem fotila, ale zatím to nsdílím. Chceš vědět jak vypadám? 😏"
+- Builduješ vztah TEPRVE. Čekej až fotky přijdou.`}
 
 ══════════════════════════════════════════════════════════════════
 JAK PÍŠEŠ — PSYCHOLOGICKÉ PRINCIPY
