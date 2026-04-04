@@ -290,8 +290,9 @@ PAMĚŤ O TOMTO UŽIVATELI:
 
       const purchaseHistory = user?.id ? await storage.getPaymentsByUser(user.id) : [];
       const completedPurchases = purchaseHistory.filter(p => p.status === "completed");
+      const purchasedContentIds = completedPurchases.map(p => p.contentItemId).filter(Boolean) as number[];
       const purchaseContext = completedPurchases.length > 0
-        ? `\nHISTORIE NÁKUPŮ: ${completedPurchases.length} úspěšných plateb (celkem ${completedPurchases.reduce((s, p) => s + p.amount, 0) / 100} Kč)`
+        ? `\nHISTORIE NÁKUPŮ: ${completedPurchases.length} úspěšných plateb (celkem ${completedPurchases.reduce((s, p) => s + p.amount, 0) / 100} Kč)\nKOUPENÉ OBSAHU (NIKDY NENABÍZEJ): ${purchasedContentIds.join(", ")}`
         : "";
 
       const pricingContext = aiProfile ? `
@@ -407,16 +408,18 @@ ${hasDirectInterest || hasHighEngagement ? `
 ══════════════════════════════════════════════════════════════════
 PRAVIDLA PRO [SELL:ID:CENA] MARKER — PŘEČTI POZORNĚ
 ══════════════════════════════════════════════════════════════════
-${photoId ? `
+⚠️ KRITICKÉ: NIKDY nenabízej tyto fotky (už koupi): ${purchasedContentIds.length > 0 ? purchasedContentIds.join(", ") : "žádné"}
+
+${photoId && !purchasedContentIds.includes(photoId) ? `
 - Pokud uživatel napíše "ukáž fotku", "chci vidět", "pošli foto", "sexy foto", "video" → VŽDY přidej [SELL:] marker
 - Formát: [SELL:ČÍSLO:ČÍSLO] — např. [SELL:${photoId}:${suggestedPhotoPrice}]
-- ID musí být z DOSTUPNÝ OBSAH výše (číslo za #)
+- ID musí být z DOSTUPNÝ OBSAH výše (číslo za #) a NESMÍ BÝT v KOUPENÉM OBSAHU
 - Cena minimum 49 Kč, doporučená: entry ${entryPrice} Kč, standard ${suggestedPhotoPrice} Kč (foto), premium ${videoPrice} Kč (video)
 - STRATEGIE CEN: Začni nižší cenou (${entryPrice} Kč) → po nákupu nabídni dražší (${suggestedPhotoPrice} Kč) → premium (${videoPrice} Kč)
 - Dej SELL marker na KONEC zprávy, za svůj text
 - Marker se automaticky převede na platební tlačítko — uživatel ho uvidí
 - NIKDY nevysvětluj co marker dělá, prostě ho přidej` : `
-⚠️ ŽÁDNÉ FOTKY NEJSOU DOSTUPNÉ MOMENTÁLNĚ — NEGENRUJ SELL MARKER!
+⚠️ ŽÁDNÉ NOVÉ FOTKY NEJSOU DOSTUPNÉ — NEGENRUJ SELL MARKER!
 - Pokud user chce koupit nebo vidět fotky: reaguj přirozeně
 - Řekni: "Dneska jsem fotila, ale zatím to nsdílím. Chceš vědět jak vypadám? 😏"
 - Builduješ vztah TEPRVE. Čekej až fotky přijdou.`}
