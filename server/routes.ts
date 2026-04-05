@@ -2373,6 +2373,44 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
     }
   });
 
+  app.post("/api/stripe/complete-payment/:sessionId", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const payment = await storage.getPaymentByStripeSession(sessionId);
+      
+      if (!payment) {
+        return res.status(404).json({ error: "Payment not found" });
+      }
+
+      // Mark as completed
+      await storage.updatePaymentStatus(payment.id, 'completed');
+
+      // Unlock content if applicable
+      if (payment.contentItemId && payment.userId) {
+        try {
+          await storage.autoCreateAvatarElements(payment.contentItemId);
+          await storage.unlockAssetsForPayment(payment.userId, payment.contentItemId, payment.id);
+          
+          // Send unlock message
+          const convs = await storage.getConversationsByUser(payment.userId);
+          if (convs.length > 0) {
+            const item = await storage.getContentItem(payment.contentItemId);
+            const isVideo = item?.mimeType?.startsWith("video");
+            const amountCzk = Math.round(payment.amount / 100);
+            const confirmMsg = `✅ Platba ${amountCzk} Kč přijata! Tady máš svůj exkluzivní ${isVideo ? "video" : "obsah"} 💋🔓\n\n[UNLOCKED_CONTENT:${payment.contentItemId}]\n\n✨ Tohle se ti odemklo i v šatníku — mrkni na svojí Ninnu 😏`;
+            await storage.createMessage(convs[0].id, "assistant", confirmMsg);
+          }
+        } catch (err: any) {
+          console.error("[Complete Payment] Error unlocking:", err.message);
+        }
+      }
+
+      res.json({ ok: true, payment });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/debug/payments", async (_req, res) => {
     try {
       const allPayments = await storage.getAllPayments();

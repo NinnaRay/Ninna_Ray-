@@ -51,10 +51,18 @@ export default function PaymentSuccess() {
 
   // Auto-redirect to chat after 3 seconds
   useEffect(() => {
-    if (sessionStatus === "success") {
-      const timer = setTimeout(() => {
+    if (sessionStatus === "success" && sessionId) {
+      const timer = setTimeout(async () => {
+        // Mark payment as completed (unlock content)
+        try {
+          await fetch(`/api/stripe/complete-payment/${sessionId}`, { method: 'POST' });
+        } catch (err) {
+          console.error("Complete payment error:", err);
+        }
+        
         // Clear all conversation caches to force refresh
         queryClient.removeQueries({ queryKey: ['/api/conversations'] });
+        
         // Wait a moment then redirect with hard reload
         setTimeout(() => {
           window.location.href = '/chat';
@@ -62,7 +70,7 @@ export default function PaymentSuccess() {
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [sessionStatus, queryClient]);
+  }, [sessionStatus, sessionId, queryClient]);
 
   if (sessionStatus === "error") {
     return (
