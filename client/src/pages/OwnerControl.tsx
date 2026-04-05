@@ -1,26 +1,53 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Lock, LogOut, Zap, Users, TrendingUp, Radio } from "lucide-react";
+import { Lock, LogOut, Zap, Users, TrendingUp, Radio, BarChart3, Activity, Target } from "lucide-react";
 import ninnaImg from "@assets/IMG_6506_1775388955437.jpeg";
 
 const OWNER_PASSWORD = "ninna2024";
+
+interface MasterStats {
+  totalUsers: number;
+  activeNow: number;
+  todayRevenue: number;
+  totalRevenue: number;
+  totalMessages: number;
+  avgEngagement: number;
+  subscriptions: number;
+  topContent: { name: string; purchases: number }[];
+}
 
 export default function OwnerControl() {
   const [, setLocation] = useLocation();
   const [password, setPassword] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authError, setAuthError] = useState("");
-  const [ninnaStatus, setNinnaStatus] = useState({
-    isLive: true,
-    activeUsers: 23,
+  const [stats, setStats] = useState<MasterStats>({
+    totalUsers: 127,
+    activeNow: 23,
     todayRevenue: 45230,
-    messagesSent: 156,
+    totalRevenue: 3693700,
+    totalMessages: 8456,
+    avgEngagement: 89,
+    subscriptions: 34,
+    topContent: [
+      { name: "Photo #93", purchases: 45 },
+      { name: "Video #103", purchases: 38 },
+      { name: "Photo #62", purchases: 31 },
+      { name: "Video #94", purchases: 28 },
+    ],
   });
   const [commandInput, setCommandInput] = useState("");
   const [lastCommand, setLastCommand] = useState("");
+  const [recentActions, setRecentActions] = useState([
+    { user: "Jana", action: "Koupila foto #93", time: "před 2 min", value: "375 Kč" },
+    { user: "David", action: "Odemkl video #103", time: "před 5 min", value: "599 Kč" },
+    { user: "Janča", action: "Nastavil si wardrobe", time: "před 8 min", value: "nový" },
+    { user: "Petr", action: "Poslal 12 zpráv", time: "před 12 min", value: "+12" },
+    { user: "Kuba", action: "Aktivní 2 hodiny", time: "před 15 min", value: "online" },
+  ]);
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +63,7 @@ export default function OwnerControl() {
   const sendCommand = (cmd: string) => {
     setLastCommand(cmd);
     setCommandInput("");
-    // Simulace odeslání příkazu Ninně
+    // Simulace příkazu
     setTimeout(() => setLastCommand(""), 3000);
   };
 
@@ -46,8 +73,8 @@ export default function OwnerControl() {
         <Card className="bg-gray-800/50 border-pink-500/30 p-8 max-w-md w-full">
           <div className="text-center mb-8">
             <Lock className="w-12 h-12 mx-auto mb-4 text-pink-500" />
-            <h1 className="text-3xl font-bold text-white mb-2">Owner Control</h1>
-            <p className="text-gray-400">Přístup pouze pro majitele</p>
+            <h1 className="text-3xl font-bold text-white mb-2">Master Control</h1>
+            <p className="text-gray-400">Pouze pro majitele</p>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-4">
@@ -69,7 +96,7 @@ export default function OwnerControl() {
               className="w-full bg-gradient-to-r from-pink-500 to-purple-600 font-bold py-6"
               data-testid="button-login"
             >
-              Vstoupit do Kontroly
+              Přístup k Hlavní Ninně
             </Button>
           </form>
         </Card>
@@ -83,8 +110,8 @@ export default function OwnerControl() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-white">Tvá Ninna Live</h1>
-            <p className="text-gray-400">Majitel - Owner Control Panel</p>
+            <h1 className="text-4xl font-bold text-white">🎛️ Master Control Panel</h1>
+            <p className="text-gray-400">Ninna Ray - Agentura AI (Real-Time)</p>
           </div>
           <Button
             variant="outline"
@@ -97,22 +124,80 @@ export default function OwnerControl() {
           </Button>
         </div>
 
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <Card className="bg-gradient-to-br from-blue-500/20 to-blue-900/20 border-blue-500/30 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-300 text-sm font-bold">UŽIVATELÉ</p>
+                <p className="text-3xl font-black text-white">{stats.totalUsers}</p>
+                <p className="text-xs text-blue-400">{stats.activeNow} online</p>
+              </div>
+              <Users className="w-12 h-12 text-blue-400 opacity-30" />
+            </div>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-green-500/20 to-green-900/20 border-green-500/30 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-green-300 text-sm font-bold">TRŽBY DNES</p>
+                <p className="text-3xl font-black text-white">{(stats.todayRevenue / 1000).toFixed(0)}K</p>
+                <p className="text-xs text-green-400">Kč</p>
+              </div>
+              <TrendingUp className="w-12 h-12 text-green-400 opacity-30" />
+            </div>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-purple-500/20 to-purple-900/20 border-purple-500/30 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-purple-300 text-sm font-bold">ZPRÁVY</p>
+                <p className="text-3xl font-black text-white">{stats.totalMessages}</p>
+                <p className="text-xs text-purple-400">dnes</p>
+              </div>
+              <Activity className="w-12 h-12 text-purple-400 opacity-30" />
+            </div>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-pink-500/20 to-pink-900/20 border-pink-500/30 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-pink-300 text-sm font-bold">ENGAGEMENT</p>
+                <p className="text-3xl font-black text-white">{stats.avgEngagement}%</p>
+                <p className="text-xs text-pink-400">průměrně</p>
+              </div>
+              <Target className="w-12 h-12 text-pink-400 opacity-30" />
+            </div>
+          </Card>
+        </div>
+
         {/* Main Grid */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-12">
           {/* Live Ninna - Center */}
-          <div className="xl:col-span-2">
+          <div className="xl:col-span-2 space-y-8">
+            {/* Master Avatar */}
             <Card className="bg-gradient-to-br from-gray-800/50 to-purple-900/30 border-pink-500/30 overflow-hidden">
-              <div className="relative h-[600px] flex items-center justify-center bg-gradient-to-t from-purple-900/40 to-transparent">
+              <div className="relative h-[500px] flex items-center justify-center bg-gradient-to-t from-purple-900/40 to-transparent">
                 {/* Live Indicator */}
                 <div className="absolute top-4 left-4 flex items-center gap-2 bg-red-500/20 border border-red-500/50 rounded-full px-4 py-2">
                   <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                  <span className="text-xs font-bold text-red-300 uppercase">🔴 LIVE</span>
+                  <span className="text-xs font-bold text-red-300 uppercase">🔴 LIVE MASTER</span>
+                </div>
+
+                {/* Stats Overlay */}
+                <div className="absolute top-4 right-4 flex flex-col gap-2">
+                  <div className="bg-green-500/20 border border-green-500/50 rounded-full px-3 py-1 text-xs">
+                    <span className="text-green-300 font-bold">{stats.activeNow} uživatelů</span>
+                  </div>
+                  <div className="bg-blue-500/20 border border-blue-500/50 rounded-full px-3 py-1 text-xs">
+                    <span className="text-blue-300 font-bold">{stats.subscriptions} předplatitel</span>
+                  </div>
                 </div>
 
                 {/* Avatar */}
                 <img
                   src={ninnaImg}
-                  alt="Ninna"
+                  alt="Master Ninna"
                   className="w-full h-full object-cover"
                 />
 
@@ -120,87 +205,70 @@ export default function OwnerControl() {
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent pointer-events-none" />
 
                 {/* Info Badge */}
-                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2">
+                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 text-center">
                   <h2 className="text-3xl font-black text-white drop-shadow-lg">
-                    Ninna <span className="text-pink-400">Live</span>
+                    Ninna <span className="text-pink-400">Master</span>
                   </h2>
-                  <div className="flex items-center justify-center gap-4 mt-2 text-sm text-gray-200">
-                    <span>👥 {ninnaStatus.activeUsers} uživatelů</span>
-                    <span>💬 {ninnaStatus.messagesSent} zpráv</span>
+                  <div className="text-sm text-gray-200 mt-2">
+                    {stats.subscriptions} aktivních předplatitelů
                   </div>
                 </div>
 
-                {/* Last Command Display */}
+                {/* Last Command */}
                 {lastCommand && (
-                  <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-white text-black px-4 py-2 rounded-full font-bold text-sm shadow-lg animate-bounce">
+                  <div className="absolute top-28 left-1/2 transform -translate-x-1/2 bg-white text-black px-4 py-2 rounded-full font-bold text-sm shadow-lg animate-bounce">
                     ✓ {lastCommand}
                   </div>
                 )}
               </div>
             </Card>
 
-            {/* Quick Controls */}
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <Button
-                variant="outline"
-                className="bg-gray-800/50 border-purple-500/30 text-white hover:bg-gray-700"
-                onClick={() => sendCommand("Zavolej agenty")}
-                data-testid="button-cmd-call"
-              >
-                📢 Zavolej
-              </Button>
-              <Button
-                variant="outline"
-                className="bg-gray-800/50 border-purple-500/30 text-white hover:bg-gray-700"
-                onClick={() => sendCommand("Otevři chat")}
-                data-testid="button-cmd-chat"
-              >
-                💬 Chat
-              </Button>
-              <Button
-                variant="outline"
-                className="bg-gray-800/50 border-purple-500/30 text-white hover:bg-gray-700"
-                onClick={() => sendCommand("Přijmi call")}
-                data-testid="button-cmd-call-accept"
-              >
-                ☎️ Přijmi
-              </Button>
-            </div>
+            {/* Top Content Performance */}
+            <Card className="bg-gray-800/40 border-purple-500/30 p-6">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-purple-400" />
+                Top Prodávaný Obsah
+              </h3>
+              <div className="space-y-3">
+                {stats.topContent.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-gray-700/30 rounded">
+                    <span className="text-white font-medium">{item.name}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-2 bg-gray-600 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-pink-500 to-purple-600"
+                          style={{ width: `${(item.purchases / 50) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-pink-400 font-bold text-sm">{item.purchases}x</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
 
           {/* Control Panel - Right */}
           <div className="space-y-4">
-            {/* Status Stats */}
+            {/* Quick Stats */}
             <Card className="bg-gray-800/40 border-purple-500/30 p-6">
-              <h3 className="text-lg font-bold text-white mb-4">Status</h3>
+              <h3 className="text-lg font-bold text-white mb-4">Financování</h3>
               <div className="space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-gray-300">Stav</span>
-                    <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded">
-                      🔴 LIVE
-                    </span>
+                    <span className="text-sm text-gray-300">Celkem</span>
+                    <span className="font-bold text-green-400">{(stats.totalRevenue / 1000000).toFixed(1)}M Kč</span>
                   </div>
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-gray-300">Aktivní uživatelé</span>
-                    <span className="font-bold text-pink-400">{ninnaStatus.activeUsers}</span>
-                  </div>
-                  <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-pink-500"
-                      style={{ width: `${Math.min((ninnaStatus.activeUsers / 100) * 100, 100)}%` }}
-                    />
+                    <span className="text-sm text-gray-300">Dnes</span>
+                    <span className="font-bold text-pink-400">{(stats.todayRevenue / 1000).toFixed(0)}K Kč</span>
                   </div>
                 </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-gray-300 flex items-center gap-1">
-                      <TrendingUp className="w-4 h-4" /> Dnes
-                    </span>
-                    <span className="font-bold text-green-400">{ninnaStatus.todayRevenue.toLocaleString()} Kč</span>
-                  </div>
+                <div className="pt-2 border-t border-gray-600">
+                  <div className="text-xs text-gray-400">Průměrná transakce</div>
+                  <div className="font-bold text-white">{Math.round(stats.totalRevenue / stats.totalMessages)} Kč</div>
                 </div>
               </div>
             </Card>
@@ -213,32 +281,32 @@ export default function OwnerControl() {
               </h3>
               <div className="space-y-2">
                 <button
-                  onClick={() => sendCommand("Skenej uživatele")}
-                  className="w-full p-2 text-left bg-gray-700/50 hover:bg-gray-700 rounded text-sm text-white transition"
-                  data-testid="cmd-scan"
-                >
-                  🔍 Skenej uživatele
-                </button>
-                <button
-                  onClick={() => sendCommand("Zobraz analytics")}
-                  className="w-full p-2 text-left bg-gray-700/50 hover:bg-gray-700 rounded text-sm text-white transition"
-                  data-testid="cmd-analytics"
-                >
-                  📊 Zobraz analytics
-                </button>
-                <button
-                  onClick={() => sendCommand("Spusti kampanii")}
-                  className="w-full p-2 text-left bg-gray-700/50 hover:bg-gray-700 rounded text-sm text-white transition"
-                  data-testid="cmd-campaign"
-                >
-                  🎯 Spusti kampanii
-                </button>
-                <button
-                  onClick={() => sendCommand("Generuj report")}
+                  onClick={() => sendCommand("Vyvolej report")}
                   className="w-full p-2 text-left bg-gray-700/50 hover:bg-gray-700 rounded text-sm text-white transition"
                   data-testid="cmd-report"
                 >
-                  📄 Generuj report
+                  📊 Vyvolej report
+                </button>
+                <button
+                  onClick={() => sendCommand("Zobraz všechny Ninny")}
+                  className="w-full p-2 text-left bg-gray-700/50 hover:bg-gray-700 rounded text-sm text-white transition"
+                  data-testid="cmd-all-twins"
+                >
+                  👥 Všechny Ninny
+                </button>
+                <button
+                  onClick={() => sendCommand("Analytics refresh")}
+                  className="w-full p-2 text-left bg-gray-700/50 hover:bg-gray-700 rounded text-sm text-white transition"
+                  data-testid="cmd-refresh"
+                >
+                  🔄 Refresh data
+                </button>
+                <button
+                  onClick={() => sendCommand("Broadcast zpráva")}
+                  className="w-full p-2 text-left bg-gray-700/50 hover:bg-gray-700 rounded text-sm text-white transition"
+                  data-testid="cmd-broadcast"
+                >
+                  📢 Broadcast
                 </button>
               </div>
             </Card>
@@ -246,13 +314,13 @@ export default function OwnerControl() {
             {/* Custom Command */}
             <Card className="bg-gray-800/40 border-purple-500/30 p-4">
               <label className="text-xs font-bold text-gray-400 uppercase block mb-2">
-                Vlastní příkaz
+                Custom Příkaz
               </label>
               <div className="flex gap-2">
                 <Input
                   value={commandInput}
                   onChange={(e) => setCommandInput(e.target.value)}
-                  placeholder="Napiš příkaz..."
+                  placeholder="Příkaz..."
                   className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
                   data-testid="input-command"
                   onKeyPress={(e) => {
@@ -273,26 +341,25 @@ export default function OwnerControl() {
           </div>
         </div>
 
-        {/* Activity Log */}
+        {/* Real-Time Activity Feed */}
         <Card className="bg-gray-800/40 border-purple-500/30 p-6">
-          <h2 className="text-2xl font-bold text-white mb-4">Aktivita</h2>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-center justify-between p-3 bg-gray-700/30 rounded">
-              <span className="text-gray-300">Ninna se připojila do chatu</span>
-              <span className="text-xs text-gray-500">právě teď</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-gray-700/30 rounded">
-              <span className="text-gray-300">5 agentů aktivní v live</span>
-              <span className="text-xs text-gray-500">před 2 min</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-gray-700/30 rounded">
-              <span className="text-gray-300">Příchodový odkaz aktivní</span>
-              <span className="text-xs text-gray-500">od 12:30</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-gray-700/30 rounded">
-              <span className="text-gray-300">Poslední zpráva odeslána</span>
-              <span className="text-xs text-gray-500">před 45 sec</span>
-            </div>
+          <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+            <Activity className="w-6 h-6 text-pink-400" />
+            Live Aktivita Zákazníků
+          </h2>
+          <div className="space-y-3">
+            {recentActions.map((action, i) => (
+              <div key={i} className="flex items-center justify-between p-4 bg-gray-700/20 rounded border border-gray-700/50 hover:bg-gray-700/30 transition">
+                <div className="flex-1">
+                  <div className="font-bold text-white">{action.user}</div>
+                  <div className="text-sm text-gray-300">{action.action}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-pink-400">{action.value}</div>
+                  <div className="text-xs text-gray-500">{action.time}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </Card>
       </div>

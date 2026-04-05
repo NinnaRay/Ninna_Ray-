@@ -81,6 +81,17 @@ export default function UserPersonal() {
     const hasSubscription = localStorage.getItem("has_subscription");
     if (!hasSubscription && user?.id) {
       setLocation("/payment");
+      return;
+    }
+    // Load user-specific preferences
+    const savedPrefs = localStorage.getItem("user_prefs");
+    if (savedPrefs) {
+      try {
+        const loaded = JSON.parse(savedPrefs);
+        setPrefs(loaded);
+      } catch (e) {
+        console.log("Could not load saved prefs");
+      }
     }
   }, [user, setLocation]);
 
