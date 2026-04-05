@@ -3,7 +3,7 @@ import { useChat } from "@/hooks/use-chat";
 import { ChatBubble } from "@/components/ChatBubble";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, LogOut, ChevronLeft, Crown, Mic, Loader2, Wand2, Bot } from "lucide-react";
+import { Send, LogOut, ChevronLeft, Crown, Mic, Loader2, Wand2, Bot, Sparkles } from "lucide-react";
 import { useVoice } from "@/hooks/use-voice";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -89,6 +89,16 @@ export default function Chat() {
           </div>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-purple-400 hover:text-purple-300"
+            onClick={() => setLocation("/twin")}
+            data-testid="button-twin"
+            title="Tvá Virtuální Ninna (The Sims)"
+          >
+            <Sparkles className="w-5 h-5" />
+          </Button>
           {botStatus?.isSubscribed ? (
             <Button
               variant="ghost"

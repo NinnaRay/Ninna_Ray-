@@ -42,25 +42,29 @@ export default function Twin() {
   const [showActivityPanel, setShowActivityPanel] = useState(false);
 
   useEffect(() => {
-    if (!userId) return;
-    
-    (async () => {
-      try {
-        const [twinRes, subRes, skinsRes] = await Promise.all([
-          fetch(`/api/twin/${userId}`),
-          fetch(`/api/subscription/${userId}`),
-          fetch(`/api/twin/${userId}/skins`),
-        ]);
-
-        if (twinRes.ok) setTwin(await twinRes.json());
-        if (subRes.ok) setSubscription(await subRes.json());
-        if (skinsRes.ok) setSkins(await skinsRes.json());
-      } catch (err) {
-        console.error("Twin load error:", err);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    // Simulate data load - no API needed for demo
+    setTimeout(() => {
+      setTwin({
+        userId: userId || 1,
+        visualConfig: { baseAvatarId: "ninna-v1" },
+        capabilityLevel: 3,
+        botEnabled: true,
+      });
+      setSubscription({
+        status: "active",
+        tierName: "Premium",
+        capabilityLevel: 3,
+      });
+      setSkins([
+        { id: 1, name: "Pink Suit", url: ninnaImg, previewUrl: ninnaImg },
+        { id: 2, name: "Casual", url: ninnaImg, previewUrl: ninnaImg },
+        { id: 3, name: "Business", url: ninnaImg, previewUrl: ninnaImg },
+        { id: 4, name: "Party", url: ninnaImg, previewUrl: ninnaImg },
+        { id: 5, name: "Sport", url: ninnaImg, previewUrl: ninnaImg },
+        { id: 6, name: "Luxury", url: ninnaImg, previewUrl: ninnaImg },
+      ]);
+      setLoading(false);
+    }, 500);
   }, [userId]);
 
   // Simulate needs decay
