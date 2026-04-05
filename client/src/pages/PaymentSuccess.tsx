@@ -28,6 +28,8 @@ export default function PaymentSuccess() {
       .then(data => {
         if (data.success) {
           setSessionStatus("success");
+          // Mark subscription as active
+          localStorage.setItem("has_subscription", "true");
         } else {
           setSessionStatus("pending");
         }
@@ -63,9 +65,9 @@ export default function PaymentSuccess() {
         // Clear all conversation caches to force refresh
         queryClient.removeQueries({ queryKey: ['/api/conversations'] });
         
-        // Wait a moment then redirect with hard reload
+        // Wait a moment then redirect to personalization
         setTimeout(() => {
-          window.location.href = '/chat';
+          window.location.href = '/personal';
         }, 100);
       }, 3000);
       return () => clearTimeout(timer);
@@ -85,7 +87,7 @@ export default function PaymentSuccess() {
           </p>
           <Button
             onClick={() => {
-              window.location.href = '/chat';
+              window.location.href = '/personal';
             }}
             className="bg-gradient-to-r from-pink-500 to-purple-600"
             data-testid="button-back-to-chat-error"
