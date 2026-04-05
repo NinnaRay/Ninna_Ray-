@@ -2373,6 +2373,23 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
     }
   });
 
+  app.get("/api/debug/payments", async (_req, res) => {
+    try {
+      const allPayments = await storage.getAllPayments();
+      res.json({ 
+        total: allPayments.length,
+        byStatus: {
+          pending: allPayments.filter(p => p.status === 'pending').length,
+          completed: allPayments.filter(p => p.status === 'completed').length,
+          failed: allPayments.filter(p => p.status === 'failed').length,
+        },
+        latest: allPayments.slice(0, 5)
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Fix pending payments - manually process webhook for them
   app.post("/api/admin/fix-pending-payments", async (_req, res) => {
     try {
