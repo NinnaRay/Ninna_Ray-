@@ -147,6 +147,37 @@ export const contentRecommendations = pgTable("content_recommendations", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// ─── Subscription Tiers ────────────────────────────────────────────────────────
+export const subscriptionTiers = pgTable("subscription_tiers", {
+  id: serial("id").primaryKey(),
+  key: text("key").unique().notNull(), // 'basic' | 'premium' | 'vip'
+  name: text("name").notNull(),
+  description: text("description"),
+  priceCzk: integer("price_czk").notNull(),
+  stripePriceId: text("stripe_price_id"),
+  capabilityLevel: integer("capability_level").notNull(),
+  features: jsonb("features").default([]), // array of feature strings
+  proactiveRecommendations: boolean("proactive_recommendations").default(false),
+  advancedCustomization: boolean("advanced_customization").default(false),
+  prioritySupport: boolean("priority_support").default(false),
+  exclusiveContent: boolean("exclusive_content").default(false),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// ─── User Subscriptions ─────────────────────────────────────────────────────────
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tierId: integer("tier_id").notNull().references(() => subscriptionTiers.id),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  status: text("status").default("active").notNull(), // 'active' | 'cancelled' | 'paused'
+  currentPeriodStart: timestamp("current_period_start"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  cancelledAt: timestamp("cancelled_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 // ─── Subscription Events (lifecycle tracking) ───────────────────────────────────
 export const subscriptionEvents = pgTable("subscription_events", {
   id: serial("id").primaryKey(),
@@ -171,6 +202,8 @@ export const insertAvatarInstanceSchema = createInsertSchema(avatarInstances).om
 export const insertUserUnlockedAssetSchema = createInsertSchema(userUnlockedAssets).omit({ id: true, unlockedAt: true });
 export const insertCloneMemorySchema = createInsertSchema(cloneMemories).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertContentRecommendationSchema = createInsertSchema(contentRecommendations).omit({ id: true, createdAt: true });
+export const insertSubscriptionTierSchema = createInsertSchema(subscriptionTiers).omit({ id: true, createdAt: true });
+export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSubscriptionEventSchema = createInsertSchema(subscriptionEvents).omit({ id: true, createdAt: true });
 
 export type User = typeof users.$inferSelect;
@@ -195,5 +228,9 @@ export type CloneMemory = typeof cloneMemories.$inferSelect;
 export type InsertCloneMemory = z.infer<typeof insertCloneMemorySchema>;
 export type ContentRecommendation = typeof contentRecommendations.$inferSelect;
 export type InsertContentRecommendation = z.infer<typeof insertContentRecommendationSchema>;
+export type SubscriptionTier = typeof subscriptionTiers.$inferSelect;
+export type InsertSubscriptionTier = z.infer<typeof insertSubscriptionTierSchema>;
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema>;
 export type SubscriptionEvent = typeof subscriptionEvents.$inferSelect;
 export type InsertSubscriptionEvent = z.infer<typeof insertSubscriptionEventSchema>;

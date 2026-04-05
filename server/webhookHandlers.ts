@@ -145,6 +145,14 @@ export class WebhookHandlers {
             // ── E-Bot: Deaktivovat bot (progress zůstane uložen) ─────
             await storage.disableBot(user.id);
             await storage.addManagerLog("subscription_cancelled", `Předplatné zrušeno pro ${user.name}, E-Bot uzamčen (progress uložen)`);
+            
+            // Mark user subscription as cancelled
+            const { db } = await import("./db");
+            const { userSubscriptions } = await import("@shared/schema");
+            const { eq } = await import("drizzle-orm");
+            await db.update(userSubscriptions)
+              .set({ status: "cancelled", cancelledAt: new Date() })
+              .where(eq(userSubscriptions.userId, user.id));
           }
         } catch (err: any) {
           console.error('[Webhook] subscription.deleted error:', err.message);

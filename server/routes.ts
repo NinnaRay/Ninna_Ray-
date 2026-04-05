@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
+import { registerTwinEndpoints } from "./twin-endpoints";
 import OpenAI from "openai";
 import multer from "multer";
 import path from "path";
@@ -2464,6 +2465,9 @@ Jméno (name) musí být v češtině, výstižné a poetické (např. "Červen�
       res.status(500).json({ error: err.message });
     }
   });
+
+  // Register Twin endpoints
+  registerTwinEndpoints(app);
 
   return httpServer;
 }
