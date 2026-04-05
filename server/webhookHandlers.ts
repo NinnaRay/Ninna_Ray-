@@ -33,8 +33,11 @@ export class WebhookHandlers {
         const sessionId = session.id;
         const paymentIntentId = session.payment_intent;
 
+        console.log(`[Webhook] checkout.session.completed received, sessionId: ${sessionId}`);
+
         try {
           const payment = await storage.getPaymentByStripeSession(sessionId);
+          console.log(`[Webhook] Found payment:`, payment);
           if (payment) {
             await storage.updatePaymentStatus(payment.id, 'completed', paymentIntentId);
             await storage.addManagerLog('payment_success', `Platba #${payment.id} úspěšně dokončena, session: ${sessionId}`);

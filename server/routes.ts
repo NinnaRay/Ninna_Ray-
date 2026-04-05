@@ -1445,18 +1445,7 @@ Vrať POUZE čistý JSON (bez markdown):
       const userPayments = await storage.getPaymentsByUser(actualUserId);
       const hasPaid = userPayments.some(p => p.status === "completed" && p.contentItemId === contentId);
 
-      let hasBeenSent = false;
-      if (!hasPaid) {
-        const convs = await storage.getConversationsByUser(actualUserId);
-        for (const conv of convs) {
-          const msgs = await storage.getMessagesByConversation(conv.id);
-          if (msgs.some(m => m.role === "assistant" && m.content.includes(`[UNLOCKED_CONTENT:${contentId}]`))) {
-            hasBeenSent = true;
-            break;
-          }
-        }
-      }
-      if (!hasPaid && !hasBeenSent) return res.status(403).json({ message: "Content not unlocked" });
+      if (!hasPaid) return res.status(403).json({ message: "Content not unlocked" });
 
       const item = await storage.getContentItem(contentId);
       if (!item) return res.status(404).json({ message: "Not found" });
