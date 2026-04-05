@@ -89,16 +89,6 @@ export default function Chat() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-purple-400 hover:text-purple-300"
-            onClick={() => setLocation("/twin")}
-            data-testid="button-twin"
-            title="Tvá Virtuální Ninna (The Sims)"
-          >
-            <Sparkles className="w-5 h-5" />
-          </Button>
           {botStatus?.isSubscribed ? (
             <Button
               variant="ghost"

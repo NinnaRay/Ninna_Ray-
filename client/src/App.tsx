@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Landing from "@/pages/Landing";
 import Chat from "@/pages/Chat";
 import Twin from "@/pages/Twin";
+import OwnerControl from "@/pages/OwnerControl";
 import AgentDashboard from "@/pages/AgentDashboard";
 import AdminDashboard from "@/pages/AdminDashboard";
 import ManagerDashboard from "@/pages/ManagerDashboard";
@@ -22,6 +23,7 @@ function Router() {
       <Route path="/" component={Landing} />
       <Route path="/chat" component={Chat} />
       <Route path="/twin" component={Twin} />
+      <Route path="/owner" component={OwnerControl} />
       <Route path="/bot" component={EBot} />
       <Route path="/agent" component={AgentDashboard} />
       <Route path="/admin" component={AdminDashboard} />
