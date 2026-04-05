@@ -620,14 +620,6 @@ NIKDY NEDĚLEJ:
               const isVideo = chosen.mimeType?.startsWith("video");
               const price = isVideo ? suggestedPhotoPrice * 2 : suggestedPhotoPrice;
               const uid = conversation.userId;
-              const userForStripe = await storage.getUser(uid);
-              let customerId = userForStripe?.stripeCustomerId;
-              if (!customerId && userForStripe) {
-                const { stripeService } = await import("./stripeService");
-                const customer = await stripeService.createCustomer(userForStripe.name, { userId: String(uid) });
-                customerId = customer.id;
-                await storage.updateStripeCustomerId(uid, customerId);
-              }
               const itemLabel = isVideo ? "Exkluzivní video" : "Exkluzivní fotka";
               const baseUrl = process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000";
               const stripeClient = await getUncachableStripeClient();
@@ -1727,13 +1719,6 @@ Vrať POUZE čistý JSON (bez markdown):
 
       const user = await storage.getUser(parsedUserId);
       if (!user) return res.status(404).json({ message: "Uživatel nenalezen" });
-
-      let customerId = user.stripeCustomerId;
-      if (!customerId) {
-        const customer = await stripeService.createCustomer(user.name, { userId: String(user.id) });
-        customerId = customer.id;
-        await storage.updateStripeCustomerId(user.id, customerId);
-      }
 
       const { getUncachableStripeClient } = await import("./stripeClient");
       const stripe = await getUncachableStripeClient();

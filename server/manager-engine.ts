@@ -481,21 +481,12 @@ async function generateStripeCheckoutUrl(userId: number, photoId: number, priceC
     const user = await storage.getUser(userId);
     if (!user) return null;
 
-    let customerId = user.stripeCustomerId;
-    if (!customerId) {
-      const { stripeService } = await import("./stripeService");
-      const customer = await stripeService.createCustomer(user.name, { userId: String(user.id) });
-      customerId = customer.id;
-      await storage.updateStripeCustomerId(user.id, customerId);
-    }
-
     const vaultItem = await storage.getContentItem(photoId);
     const isVideo = vaultItem?.mimeType?.startsWith("video") || vaultItem?.originalName?.match(/\.(mp4|mov|avi|MOV|MP4)$/i);
     const itemLabel = isVideo ? "Exkluzivní video" : "Exkluzivní fotka";
 
     const baseUrl = process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000";
     const session = await stripe.checkout.sessions.create({
-      customer: customerId,
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
