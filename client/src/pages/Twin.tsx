@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Zap, Lock, Unlock, Sparkles, Users, Settings, BarChart3, Bot, User, Heart, Brain, Zzzz, Flame, MessageSquare } from "lucide-react";
+import { Zap, Lock, Unlock, Sparkles, Users, Settings, BarChart3, Bot, User, Heart, Brain, Moon, Flame, MessageSquare } from "lucide-react";
 import ninnaImg from "@assets/IMG_6506_1775388955437.jpeg";
 
 interface TwinNeeds {
@@ -16,12 +16,13 @@ interface TwinNeeds {
 const ACTIVITIES = [
   { id: "chat", name: "💬 Chat", icon: MessageSquare, cost: 5, gain: { happiness: 15, energy: -10 } },
   { id: "workout", name: "💪 Training", icon: Flame, cost: 10, gain: { energy: -30, productivity: 20 } },
-  { id: "relax", name: "😴 Rest", icon: Zzzz, cost: 5, gain: { energy: 40, happiness: 10 } },
+  { id: "relax", name: "😴 Rest", icon: Moon, cost: 5, gain: { energy: 40, happiness: 10 } },
   { id: "socialize", name: "👥 Socialize", icon: Users, cost: 15, gain: { social: 30, happiness: 20 } },
 ];
 
 export default function Twin() {
-  const { userId, user } = useAuth();
+  const { user } = useAuth();
+  const userId = user?.id;
   const [, setLocation] = useLocation();
   const [twin, setTwin] = useState<any>(null);
   const [subscription, setSubscription] = useState<any>(null);
@@ -275,10 +276,10 @@ export default function Twin() {
               </h3>
               <div className="space-y-4">
                 {[
-                  { key: "energy", label: "Energie", icon: Zap, color: "bg-yellow-500" },
-                  { key: "happiness", label: "Štěstí", icon: Sparkles, color: "bg-pink-500" },
-                  { key: "social", label: "Sociabilita", icon: Users, color: "bg-blue-500" },
-                  { key: "productivity", label: "Produktivita", icon: Brain, color: "bg-purple-500" },
+                  { key: "energy", label: "Energie", color: "bg-yellow-500" },
+                  { key: "happiness", label: "Štěstí", color: "bg-pink-500" },
+                  { key: "social", label: "Sociabilita", color: "bg-blue-500" },
+                  { key: "productivity", label: "Produktivita", color: "bg-purple-500" },
                 ].map(({ key, label, color }) => (
                   <div key={key}>
                     <div className="flex items-center justify-between mb-1">
