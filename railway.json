@@ -1,53 +1,11 @@
 {
-  "$schema": "https://railway.app/railway.schema.json",
-  "build": {
-    "builder": "nixpacks"
-  },
-  "deploy": {
-    "startCommand": "npm start",
-    "restartPolicyType": "always",
-    "restartPolicyMaxRetries": 5
-  }
-}
-{
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS",
-    "nixpacksPlan": {
-      "providers": [
-        "...",
-        "node"
-      ]
-    },
-    "buildEnvironment": "V3"
+    "builder": "NIXPACKS"
   },
   "deploy": {
-    "runtime": "V2",
-    "numReplicas": 1,
     "startCommand": "npm start",
-    "sleepApplication": true,
-    "useLegacyStacker": false,
-    "ipv6EgressEnabled": true,
-    "multiRegionConfig": {
-      "us-west2": {
-        "numReplicas": 1
-      }
-    },
-    "restartPolicyType": "ALWAYS"
+    "restartPolicyType": "ALWAYS",
+    "restartPolicyMaxRetries": 5
   }
-}
-{
-  "message": "Stopping Container",
-  "severity": "info",
-  "attributes": {
-    "level": "info"
-  },
-  "tags": {
-    "project": "eaaeb571-e92a-4357-8e7a-72bf1b17e626",
-    "environment": "cde59dbb-eae9-40d7-a039-6204421ad0c6",
-    "service": "84397856-2dde-46ae-82ef-423dcc04c30a",
-    "deployment": "db7d53de-069f-44d2-bb7f-09ff979873d9",
-    "replica": "2085693e-9491-45d4-b323-047dadaca53e"
-  },
-  "timestamp": "2026-05-09T01:51:46.733591498Z"
 }
